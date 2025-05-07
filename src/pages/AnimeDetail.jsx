@@ -6,7 +6,7 @@ import Loader from '../components/Loader';
 
 const AnimeDetail = () => {
   const { animeId } = useParams();
-  const [anime, setAnime] = useState(null);
+  const [animeData, setAnimeData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -15,9 +15,47 @@ const AnimeDetail = () => {
       try {
         setLoading(true);
         setError(null);
+        
         const data = await getAnimeDetails(animeId);
-        setAnime(data);
+        console.log('Raw anime details:', data);
+        
+        // Process the API response based on actual structure
+        if (data && data.data) {
+          // Normalize the data structure
+          const processedData = {
+            title: data.data.title || 'Unknown Anime',
+            synopsis: data.data.synopsis || data.data.description || 'No synopsis available.',
+            thumbnail: data.data.thumbnail || data.data.image || data.data.poster || '/placeholder-anime.jpg',
+            rating: data.data.rating || data.data.score || 'N/A',
+            type: data.data.type || 'TV',
+            status: data.data.status || 'Unknown',
+            genres: data.data.genres || [],
+            episodes: []
+          };
+          
+          // Extract episodes from different possible structures
+          if (data.data.episodes && Array.isArray(data.data.episodes)) {
+            processedData.episodes = data.data.episodes.map(ep => ({
+              id: ep.id || ep.episodeId || `ep-${Math.random()}`,
+              number: ep.number || ep.episodeNumber || '??',
+              title: ep.title || `Episode ${ep.number || '??'}`,
+              thumbnail: ep.thumbnail || ep.image || processedData.thumbnail
+            }));
+          } else if (data.data.episodeList && Array.isArray(data.data.episodeList)) {
+            processedData.episodes = data.data.episodeList.map(ep => ({
+              id: ep.id || ep.episodeId || `ep-${Math.random()}`,
+              number: ep.number || ep.episodeNumber || '??',
+              title: ep.title || `Episode ${ep.number || '??'}`,
+              thumbnail: ep.thumbnail || ep.image || processedData.thumbnail
+            }));
+          }
+          
+          setAnimeData(processedData);
+        } else {
+          throw new Error('Invalid API response format');
+        }
       } catch (err) {
+        console.error('Error fetching anime details:', err);
         setError('Failed to load anime details. Please try again later.');
       } finally {
         setLoading(false);
@@ -26,6 +64,7 @@ const AnimeDetail = () => {
 
     if (animeId) {
       fetchAnimeDetails();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [animeId]);
 
@@ -33,7 +72,7 @@ const AnimeDetail = () => {
     return <Loader />;
   }
 
-  if (error || !anime) {
+  if (error || !animeData) {
     return (
       <div className="container mx-auto px-4 py-10 text-center">
         <p className="text-red-500 text-lg">{error || 'Anime not found'}</p>
@@ -49,135 +88,103 @@ const AnimeDetail = () => {
 
   return (
     <div className="container mx-auto px-4 py-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-        {/* Hero section with poster and details */}
-        <div className="relative bg-gray-900 text-white">
-          {anime.coverImage && (
-            <div className="absolute inset-0 opacity-20" style={{
-              backgroundImage: `url(${anime.coverImage})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              filter: 'blur(10px)'
-            }}></div>
-          )}
+      <div className="mb-4">
+        <Link to="/" className="text-blue-500 hover:underline">
+          &larr; Back to Home
+        </Link>
+      </div>
+      
+      {/* Anime Details */}
+      <div className="flex flex-col md:flex-row gap-6 mb-8">
+        <div className="w-full md:w-1/3 lg:w-1/4">
+          <img 
+            src={animeData.thumbnail} 
+            alt={animeData.title}
+            className="w-full h-auto rounded-lg shadow-md"
+            onError={(e) => {
+              e.target.onerror = null;
+              e.target.src = '/placeholder-anime.jpg';
+            }}
+          />
           
-          <div className="relative z-10 container mx-auto p-6 md:flex gap-8">
-            <div className="flex-shrink-0 mb-6 md:mb-0">
-              <img 
-                src={anime.poster || anime.thumbnail} 
-                alt={anime.title} 
-                className="w-48 h-auto rounded-lg shadow-lg mx-auto md:mx-0"
-              />
+          <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="text-gray-600 dark:text-gray-400">Type:</div>
+              <div className="text-right font-medium dark:text-white">{animeData.type}</div>
+              
+              <div className="text-gray-600 dark:text-gray-400">Status:</div>
+              <div className="text-right font-medium dark:text-white">{animeData.status}</div>
+              
+              <div className="text-gray-600 dark:text-gray-400">Rating:</div>
+              <div className="text-right font-medium dark:text-white">{animeData.rating}</div>
             </div>
             
-            <div className="flex-1">
-              <h1 className="text-2xl md:text-3xl font-bold mb-2">{anime.title}</h1>
-              
-              {anime.alternativeTitle && (
-                <h2 className="text-lg text-gray-300 mb-4">{anime.alternativeTitle}</h2>
-              )}
-              
-              <div className="flex flex-wrap gap-2 mb-4">
-                {anime.genres?.map((genre) => (
-                  <span key={genre} className="px-2 py-1 bg-blue-600 bg-opacity-50 rounded text-sm">
-                    {genre}
-                  </span>
-                ))}
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm mb-6">
-                {anime.status && (
-                  <div>
-                    <span className="text-gray-400">Status:</span> {anime.status}
-                  </div>
-                )}
-                {anime.type && (
-                  <div>
-                    <span className="text-gray-400">Type:</span> {anime.type}
-                  </div>
-                )}
-                {anime.studio && (
-                  <div>
-                    <span className="text-gray-400">Studio:</span> {anime.studio}
-                  </div>
-                )}
-                {anime.releaseDate && (
-                  <div>
-                    <span className="text-gray-400">Released:</span> {anime.releaseDate}
-                  </div>
-                )}
-                {anime.episodes && (
-                  <div>
-                    <span className="text-gray-400">Episodes:</span> {anime.episodes}</div>
-                )}
-                {anime.duration && (
-                  <div>
-                    <span className="text-gray-400">Duration:</span> {anime.duration}
-                  </div>
-                )}
-                {anime.rating && (
-                  <div>
-                    <span className="text-gray-400">Rating:</span> {anime.rating}
-                  </div>
-                )}
-              </div>
-              
-              {anime.synopsis && (
-                <div className="mb-4">
-                  <p className="text-gray-200 line-clamp-3 md:line-clamp-none">{anime.synopsis}</p>
+            {animeData.genres && animeData.genres.length > 0 && (
+              <div className="mt-4">
+                <div className="text-gray-600 dark:text-gray-400 mb-2">Genres:</div>
+                <div className="flex flex-wrap gap-2">
+                  {animeData.genres.map((genre, index) => (
+                    <span 
+                      key={index}
+                      className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs"
+                    >
+                      {typeof genre === 'string' ? genre : genre.name || 'Unknown'}
+                    </span>
+                  ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
         
-        {/* Episodes section */}
-        <div className="p-6">
-          <h2 className="text-xl font-bold mb-4 dark:text-white">Episodes</h2>
+        <div className="w-full md:w-2/3 lg:w-3/4">
+          <h1 className="text-2xl md:text-3xl font-bold mb-4 dark:text-white">
+            {animeData.title}
+          </h1>
           
-          {anime.episodes && anime.episodes.length > 0 ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {anime.episodeList?.map((episode) => (
-                <Link 
-                  key={episode.id} 
-                  to={`/watch/${episode.id}`}
-                  className="block p-3 bg-gray-100 dark:bg-gray-700 rounded hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors text-center"
-                >
-                  <span className="font-medium text-gray-900 dark:text-white">EP {episode.number}</span>
-                  {episode.title && (
-                    <p className="text-sm text-gray-600 dark:text-gray-300 truncate mt-1">{episode.title}</p>
-                  )}
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 dark:text-gray-400">No episodes available yet.</p>
-          )}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+            <h2 className="text-lg font-semibold mb-2 dark:text-white">Synopsis</h2>
+            <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
+              {animeData.synopsis}
+            </p>
+          </div>
           
-          {/* Batch download section */}
-          {anime.batchId && (
-            <div className="mt-8">
-              <h2 className="text-xl font-bold mb-4 dark:text-white">Batch Download</h2>
-              <Link 
-                to={`/batch/${anime.batchId}`}
-                className="inline-block px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-              >
-                Download All Episodes
-              </Link>
-            </div>
-          )}
-          
-          {/* Related anime */}
-          {anime.relatedAnime && anime.relatedAnime.length > 0 && (
-            <div className="mt-8">
-              <h2 className="text-xl font-bold mb-4 dark:text-white">Related Anime</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {anime.relatedAnime.map((relatedAnime) => (
-                  <AnimeCard key={relatedAnime.id} anime={relatedAnime} />
+          {/* Episodes List */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <h2 className="text-lg font-semibold mb-4 dark:text-white">Episodes</h2>
+            
+            {animeData.episodes && animeData.episodes.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {animeData.episodes.map((episode) => (
+                  <Link 
+                    key={episode.id}
+                    to={`/watch/${episode.id}`}
+                    className="flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    <div className="w-16 h-16 flex-shrink-0 bg-gray-200 rounded overflow-hidden mr-3">
+                      <img 
+                        src={episode.thumbnail} 
+                        alt={`Episode ${episode.number}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = '/placeholder-episode.jpg';
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <span className="text-blue-500 font-medium">Episode {episode.number}</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                        {episode.title}
+                      </p>
+                    </div>
+                  </Link>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <p className="text-gray-500 dark:text-gray-400">No episodes available.</p>
+            )}
+          </div>
         </div>
       </div>
     </div>

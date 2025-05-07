@@ -1,7 +1,12 @@
 // src/pages/Home.jsx
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getHomeData, getRecentAnime, getPopularAnime, searchAnime } from '../services/api';
+import {
+  getHomeData,
+  getRecentAnime,
+  getPopularAnime,
+  searchAnime
+} from '../services/api';
 import AnimeCard from '../components/AnimeCard';
 import Loader from '../components/Loader';
 import Pagination from '../components/Pagination';
@@ -11,7 +16,7 @@ const Home = () => {
   const searchQuery = searchParams.get('q');
   const pageParam = searchParams.get('page');
   const currentPage = pageParam ? parseInt(pageParam) : 1;
-  
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [animeList, setAnimeList] = useState([]);
@@ -23,29 +28,85 @@ const Home = () => {
       try {
         setLoading(true);
         setError(null);
-        
-        let data;
-        
+        let rawData = {};
+        let flatList = [];
+
         if (searchQuery) {
-          data = await searchAnime(searchQuery, currentPage);
+          rawData = await searchAnime(searchQuery, currentPage);
           setActiveTab('search');
         } else if (activeTab === 'recent') {
-          data = await getRecentAnime(currentPage);
+          rawData = await getRecentAnime(currentPage);
         } else if (activeTab === 'popular') {
-          data = await getPopularAnime(currentPage);
+          rawData = await getPopularAnime(currentPage);
         } else {
-          data = await getHomeData();
+          rawData = await getHomeData();
         }
+
+        console.log('Raw Data:', rawData);
         
-        setAnimeList(data.animeList || []);
-        setTotalPages(data.pagination?.totalPages || 1);
+        // Extract data based on API response structure
+        if (rawData && rawData.data) {
+          if (Array.isArray(rawData.data)) {
+            // If data is directly an array
+            flatList = rawData.data;
+          } else if (rawData.data.list && Array.isArray(rawData.data.list)) {
+            // If data has a list property that's an array (for home page)
+            flatList = rawData.data.list.flatMap(group => 
+              Array.isArray(group.animeList) ? group.animeList : []
+            );
+          } else if (rawData.data.animeList && Array.isArray(rawData.data.animeList)) {
+            // If data has an animeList property that's an array
+            flatList = rawData.data.animeList;
+          } else if (Object.keys(rawData.data).length > 0) {
+            // If data is an object with potential anime items
+            // Look for any array in the data object
+            for (const key in rawData.data) {
+              if (Array.isArray(rawData.data[key])) {
+                flatList = rawData.data[key];
+                if (flatList.length > 0) break;
+              }
+            }
+            
+            // If still no arrays found, try to treat the data object itself as a single item
+            if (flatList.length === 0 && rawData.data.title) {
+              flatList = [rawData.data];
+            }
+          }
+        }
+
+        console.log('Extracted flatList:', flatList);
+
+        // Normalize the anime data
+        const normalizedList = flatList.map(item => {
+          // For debugging
+          if (!item) {
+            console.warn('Null or undefined item found in flatList');
+            return null;
+          }
+          
+          return {
+            id: item.animeId || item.id || item.slug || item.href || 
+                 (item.link ? item.link.replace(/.*\/([^/]+)\/?$/, '$1') : Math.random().toString()),
+            title: item.title || item.name || 'No Title',
+            thumbnail: item.image || item.thumbnail || item.poster || item.img || '/placeholder-anime.jpg',
+            episodeNumber: item.episodeNumber || item.episode || null,
+            type: item.type || item.category || 'TV'
+          };
+        }).filter(Boolean); // Remove any null items
+
+        setAnimeList(normalizedList);
+        setTotalPages(rawData?.pagination?.totalPages || 
+                     rawData?.data?.pagination?.totalPages || 
+                     Math.ceil(normalizedList.length / 20) || 1);
+        console.log('Normalized animeList:', normalizedList);
       } catch (err) {
+        console.error('Error details:', err);
         setError('Failed to fetch anime data. Please try again later.');
       } finally {
         setLoading(false);
       }
     };
-    
+
     fetchData();
   }, [searchQuery, currentPage, activeTab]);
 
@@ -54,15 +115,10 @@ const Home = () => {
   };
 
   const handlePageChange = (page) => {
-    // Update URL with new page number
     const newSearchParams = new URLSearchParams(searchParams);
     newSearchParams.set('page', page);
     window.history.pushState({}, '', `?${newSearchParams.toString()}`);
-    
-    // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    
-    // The useEffect will handle the data fetching
   };
 
   return (
@@ -114,7 +170,9 @@ const Home = () => {
       ) : animeList.length === 0 ? (
         <div className="text-center py-10">
           <p className="text-gray-500 dark:text-gray-400">
-            {searchQuery ? 'No results found. Try a different search term.' : 'No anime found.'}
+            {searchQuery
+              ? 'No results found. Try a different search term.'
+              : 'No anime found.'}
           </p>
         </div>
       ) : (
@@ -124,11 +182,11 @@ const Home = () => {
               <AnimeCard key={anime.id} anime={anime} />
             ))}
           </div>
-          
-          <Pagination 
-            currentPage={currentPage} 
-            totalPages={totalPages} 
-            onPageChange={handlePageChange} 
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
           />
         </>
       )}
