@@ -116,7 +116,12 @@ const AnimeDetail = () => {
               <div className="text-right font-medium dark:text-white">{animeData.status}</div>
               
               <div className="text-gray-600 dark:text-gray-400">Rating:</div>
-              <div className="text-right font-medium dark:text-white">{animeData.rating}</div>
+              <div className="text-right font-medium dark:text-white">
+                {/* Make sure rating is a string or number, not an object */}
+                {typeof animeData.rating === 'object' 
+                  ? JSON.stringify(animeData.rating) 
+                  : animeData.rating}
+              </div>
             </div>
             
             {animeData.genres && animeData.genres.length > 0 && (
@@ -128,7 +133,10 @@ const AnimeDetail = () => {
                       key={index}
                       className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs"
                     >
-                      {typeof genre === 'string' ? genre : genre.name || 'Unknown'}
+                      {/* Handle genre object or string appropriately */}
+                      {typeof genre === 'string' 
+                        ? genre 
+                        : (genre.name || (typeof genre === 'object' ? JSON.stringify(genre) : 'Unknown'))}
                     </span>
                   ))}
                 </div>
@@ -139,13 +147,15 @@ const AnimeDetail = () => {
         
         <div className="w-full md:w-2/3 lg:w-3/4">
           <h1 className="text-2xl md:text-3xl font-bold mb-4 dark:text-white">
-            {animeData.title}
+            {/* Ensure title is a string */}
+            {typeof animeData.title === 'object' ? JSON.stringify(animeData.title) : animeData.title}
           </h1>
           
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
             <h2 className="text-lg font-semibold mb-2 dark:text-white">Synopsis</h2>
             <p className="text-gray-700 dark:text-gray-300 whitespace-pre-line">
-              {animeData.synopsis}
+              {/* Ensure synopsis is a string */}
+              {typeof animeData.synopsis === 'object' ? JSON.stringify(animeData.synopsis) : animeData.synopsis}
             </p>
           </div>
           
@@ -173,9 +183,11 @@ const AnimeDetail = () => {
                       />
                     </div>
                     <div>
-                      <span className="text-blue-500 font-medium">Episode {episode.number}</span>
+                      <span className="text-blue-500 font-medium">
+                        Episode {typeof episode.number === 'object' ? JSON.stringify(episode.number) : episode.number}
+                      </span>
                       <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
-                        {episode.title}
+                        {typeof episode.title === 'object' ? JSON.stringify(episode.title) : episode.title}
                       </p>
                     </div>
                   </Link>

@@ -1,153 +1,154 @@
-// src/components/EnhancedVideoPlayer.jsx
-import { useState, useEffect } from 'react';
+// src/components/VideoPlayer.jsx
+import { useState, useEffect, useRef } from 'react';
 import { getServerData } from '../services/api';
-import Loader from './Loader';
 
-const EnhancedVideoPlayer = ({ serverId, serverOptions = [], onError }) => {
-  const [selectedServerId, setSelectedServerId] = useState(serverId);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [videoUrl, setVideoUrl] = useState(null);
+const VideoPlayer = ({ serverId, serverOptions, onError }) => {
+  const [selectedServerId, setSelectedServerId] = useState(serverId || (serverOptions && serverOptions.length > 0 ? serverOptions[0].id : null));
+  const [isLoading, setIsLoading] = useState(false);
+  const [streamingUrl, setStreamingUrl] = useState('');
+  const [activeServer, setActiveServer] = useState(null);
+  const iframeRef = useRef(null);
 
-  useEffect(() => {
-    if (selectedServerId) {
-      loadVideoFromServer(selectedServerId);
-    }
-  }, [selectedServerId]);
-
-  useEffect(() => {
-    // If serverId prop changes, update selectedServerId
-    if (serverId && serverId !== selectedServerId) {
-      setSelectedServerId(serverId);
-    }
-  }, [serverId]);
-
-  const loadVideoFromServer = async (id) => {
-    // Check if the server already has a URL in serverOptions
-    const selectedServer = serverOptions.find(server => server.id === id);
-    if (selectedServer && selectedServer.url) {
-      setVideoUrl(selectedServer.url);
-      return;
+  // Function to extract real streaming URL from default URL if needed
+  const getEmbedUrl = (url) => {
+    // Handle different URL patterns
+    if (!url) return null;
+    
+    // Handle Blogger video URLs
+    if (url.includes('blogger.com/video.g?token=')) {
+      return url; // Return as is - these are already embed URLs
     }
     
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getServerData(id);
-      console.log('Server data response:', data);
+    // Handle iframes in URLs (extract src attribute)
+    if (url.includes('<iframe')) {
+      const srcMatch = url.match(/src=["']([^"']+)["']/i);
+      if (srcMatch && srcMatch[1]) {
+        return srcMatch[1];
+      }
+    }
+    
+    // Handle Google Drive URLs
+    if (url.includes('drive.google.com')) {
+      const fileId = url.match(/\/d\/([^/]+)/);
+      if (fileId && fileId[1]) {
+        return `https://drive.google.com/file/d/${fileId[1]}/preview`;
+      }
+    }
+    
+    // Return original URL if no patterns match
+    return url;
+  };
+
+  // Load the selected server
+  useEffect(() => {
+    const loadServer = async () => {
+      if (!selectedServerId || !serverOptions) return;
       
-      if (data && data.data) {
-        // Try to find the video URL in different possible fields
-        const url = data.data.url || 
-                    data.data.videoUrl || 
-                    data.data.streamingUrl || 
-                    data.data.embedUrl;
-                    
-        if (url) {
-          setVideoUrl(url);
-        } else {
-          const errorMsg = 'No video URL found for this server.';
-          setError(errorMsg);
-          if (onError) onError(errorMsg);
+      try {
+        setIsLoading(true);
+        
+        // Find the selected server in the options
+        const server = serverOptions.find(s => s.id === selectedServerId);
+        if (!server) {
+          throw new Error(`Server with ID ${selectedServerId} not found`);
         }
-      } else {
-        const errorMsg = 'Invalid server data response.';
-        setError(errorMsg);
-        if (onError) onError(errorMsg);
+        
+        setActiveServer(server);
+        
+        // Check if we already have a URL
+        if (server.url) {
+          const embedUrl = getEmbedUrl(server.url);
+          setStreamingUrl(embedUrl);
+        } else {
+          // Get URL from API if not available
+          const serverData = await getServerData(selectedServerId);
+          
+          if (!serverData || !serverData.data || !serverData.data.streamingUrl) {
+            throw new Error('No streaming URL found for this server');
+          }
+          
+          const embedUrl = getEmbedUrl(serverData.data.streamingUrl);
+          setStreamingUrl(embedUrl);
+          
+          // Update the server object with the URL
+          server.url = embedUrl;
+        }
+      } catch (err) {
+        console.error('Error loading server:', err);
+        if (onError) {
+          onError(`Failed to load server: ${err.message}`);
+        }
+        setStreamingUrl('');
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error('Error loading video from server:', err);
-      const errorMsg = 'Failed to load video. Please try another server.';
-      setError(errorMsg);
-      if (onError) onError(errorMsg);
-    } finally {
-      setLoading(false);
-    }
+    };
+    
+    loadServer();
+  }, [selectedServerId, serverOptions, onError]);
+
+  // Handle server selection
+  const handleServerChange = (serverId) => {
+    setSelectedServerId(serverId);
   };
 
-  const handleServerChange = (id) => {
-    setSelectedServerId(id);
-  };
-
-  const renderVideoContent = () => {
-    if (loading) {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-gray-800">
-          <Loader />
-        </div>
-      );
+  // Handle player errors
+  const handleIframeError = () => {
+    if (onError) {
+      onError(`Failed to load video from ${activeServer?.name || 'selected server'}`);
     }
-    
-    if (error) {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-gray-800 text-white text-center p-4">
-          <div>
-            <p className="mb-2">{error}</p>
-            <p className="text-sm">Please try selecting a different server.</p>
-          </div>
-        </div>
-      );
-    }
-    
-    if (videoUrl) {
-      // Handle different types of video URLs
-      if (videoUrl.includes('<iframe') || videoUrl.includes('<script')) {
-        return (
-          <div 
-            className="w-full h-full" 
-            dangerouslySetInnerHTML={{ __html: videoUrl }}
-          />
-        );
-      } else {
-        // Direct URL to iframe
-        return (
-          <iframe 
-            src={videoUrl} 
-            className="w-full h-full" 
-            frameBorder="0" 
-            allowFullScreen
-            title="Anime Episode"
-          />
-        );
-      }
-    }
-    
-    // Default state - no video selected
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-gray-800 text-white">
-        <p>Select a server to watch this episode</p>
-      </div>
-    );
   };
 
   return (
-    <div className="video-player-container">
-      {/* Video player */}
-      <div className="aspect-video bg-black mb-4 relative">
-        {renderVideoContent()}
+    <div className="video-player w-full">
+      {/* Video Player */}
+      <div className="relative pt-[56.25%] bg-black rounded-lg overflow-hidden mb-4">
+        {isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : streamingUrl ? (
+          <iframe
+            ref={iframeRef}
+            src={streamingUrl}
+            className="absolute inset-0 w-full h-full"
+            allowFullScreen
+            title="Anime Video Player"
+            onError={handleIframeError}
+          ></iframe>
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-white">
+            <div className="text-center p-4">
+              <p className="mb-2">Video source not available</p>
+              <p className="text-sm">Please select another server below</p>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Server selection buttons */}
+      {/* Server Selection */}
       {serverOptions && serverOptions.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2">
-          <span className="text-gray-700 dark:text-gray-300 font-medium mr-2">Servers:</span>
-          {serverOptions.map(server => (
-            <button
-              key={server.id}
-              onClick={() => handleServerChange(server.id)}
-              className={`px-3 py-1 rounded text-sm ${
-                selectedServerId === server.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-blue-500 hover:text-white dark:hover:bg-blue-800'
-              }`}
-            >
-              {server.name}
-            </button>
-          ))}
+        <div className="mb-4">
+          <h3 className="text-lg font-medium mb-2 dark:text-white">Servers:</h3>
+          <div className="flex flex-wrap gap-2">
+            {serverOptions.map((server) => (
+              <button
+                key={server.id}
+                onClick={() => handleServerChange(server.id)}
+                className={`px-3 py-2 rounded-md transition-colors ${
+                  selectedServerId === server.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                {server.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-export default EnhancedVideoPlayer;
+export default VideoPlayer;
