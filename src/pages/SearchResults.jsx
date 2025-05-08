@@ -29,9 +29,23 @@ const SearchResults = () => {
         setLoading(true);
         setError(null);
         const data = await searchAnime(query, currentPage);
-        setResults(data.animeList || []);
-        setTotalPages(data.pagination?.totalPages || 1);
+        
+        // Debug output to console to see API response structure
+        console.log('Search API response:', data);
+        
+        // Check the exact structure of the response and adapt accordingly
+        // The API likely returns a different structure than what was expected
+        if (data && data.data) {
+          // If data is in a nested 'data' property
+          setResults(data.data.animeList || data.data || []);
+          setTotalPages(data.data.pagination?.totalPages || data.pagination?.totalPages || 1);
+        } else {
+          // Direct structure
+          setResults(data.animeList || data || []);
+          setTotalPages(data.pagination?.totalPages || 1);
+        }
       } catch (err) {
+        console.error('Search error:', err);
         setError('Failed to search anime. Please try again later.');
       } finally {
         setLoading(false);
@@ -42,16 +56,17 @@ const SearchResults = () => {
   }, [query, currentPage]);
 
   const handlePageChange = (page) => {
-    // Update URL with new page number
-    const newSearchParams = new URLSearchParams(searchParams);
+    // Create a new URLSearchParams object
+    const newSearchParams = new URLSearchParams();
+    newSearchParams.set('q', query);
     newSearchParams.set('page', page);
-    window.history.pushState({}, '', `?${newSearchParams.toString()}`);
     
-    // Scroll to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    
-    // The useEffect will handle the data fetching
+    // Use the browser's history API to update the URL
+    window.location.search = newSearchParams.toString();
   };
+
+  // Debug output for what we're rendering
+  console.log('Rendering search results:', { query, currentPage, resultsCount: results.length, results });
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -84,16 +99,24 @@ const SearchResults = () => {
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
-            {results.map((anime) => (
-              <AnimeCard key={anime.id} anime={anime} />
-            ))}
+            {Array.isArray(results) ? (
+              results.map((anime, index) => (
+                <AnimeCard key={anime.id || `anime-${index}`} anime={anime} />
+              ))
+            ) : (
+              <div className="col-span-full text-center py-10">
+                <p className="text-red-500">Invalid response format. Please try again.</p>
+              </div>
+            )}
           </div>
           
-          <Pagination 
-            currentPage={currentPage} 
-            totalPages={totalPages} 
-            onPageChange={handlePageChange} 
-          />
+          {totalPages > 1 && (
+            <Pagination 
+              currentPage={currentPage} 
+              totalPages={totalPages} 
+              onPageChange={handlePageChange} 
+            />
+          )}
         </>
       )}
     </div>

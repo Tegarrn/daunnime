@@ -1,10 +1,17 @@
 // src/App.jsx
 import React from 'react';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Header from './components/Header';
-import AppRoutes from './routes/AppRoutes';
-import { ThemeProvider } from './context/ThemeContext';
 import ScrollToTop from './components/ScrollToTop';
+import { ThemeProvider } from './context/ThemeContext';
+
+// Import pages
+import Home from './pages/Home';
+import SearchResults from './pages/SearchResults';
+import BatchDownload from './pages/BatchDownload';
+import AnimeDetail from './pages/AnimeDetail';
+import Watch from './pages/Watch';
+import NotFound from './pages/NotFound';
 
 const App = () => {
   return (
@@ -14,7 +21,15 @@ const App = () => {
           <ScrollToTop />
           <Header />
           <main>
-            <AppRoutes />
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/search" element={<SearchResults />} />
+              <Route path="/batch/:batchId" element={<BatchDownload />} />
+              {/* Tambahkan route yang hilang */}
+              <Route path="/anime/:animeId" element={<AnimeDetail />} />
+              <Route path="/watch/:episodeId" element={<Watch />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
           </main>
         </div>
       </BrowserRouter>

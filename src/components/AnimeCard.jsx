@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Play, Star, Clock } from 'lucide-react';
 
-const AnimeCard = ({ anime }) => {
+const AnimeCard = ({ anime, isEpisode = false }) => {
   if (!anime) return null;
 
   const [isHovered, setIsHovered] = useState(false);
@@ -14,11 +14,17 @@ const AnimeCard = ({ anime }) => {
   // More flexible data structure handling
   const id = anime.animeId || anime.id || anime.slug || 
              (anime.href && anime.href.replace(/.*\/([^/]+)\/?$/, '$1')) || 'unknown';
+  const episodeId = anime.episodeId || null; // Add this line to handle episode IDs
   const title = anime.title || anime.name || 'No Title';
   const thumbnail = anime.image || anime.thumbnail || anime.poster || anime.img || '/placeholder-anime.jpg';
   const episodeNumber = anime.episodeNumber || anime.episode || null;
   const type = anime.type || anime.category || 'TV';
   const rating = anime.rating || Math.floor(Math.random() * 2) + 8; // Simulate a rating between 8-10 if not provided
+
+  // Determine correct link based on the card type
+  const linkTo = isEpisode && episodeId 
+    ? `/watch/${episodeId}` 
+    : `/anime/${id}`;
 
   // Handle spotlight effect
   useEffect(() => {
@@ -57,7 +63,7 @@ const AnimeCard = ({ anime }) => {
         transition: { duration: 0.2 }
       }}
     >
-      <Link to={`/anime/${id}`}>
+      <Link to={linkTo}>
         <div className="relative aspect-[3/4] overflow-hidden">
           {/* Image with loading skeleton */}
           <div className="absolute inset-0 bg-gray-200 dark:bg-gray-700 shimmer"></div>

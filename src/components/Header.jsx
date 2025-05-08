@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, Moon, Sun, Film, Download, Home as HomeIcon } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import SearchBar from './SearchBar';
+import elainaLogo from '../assets/elaina.png'; // <-- Tambahkan ini
 
 const Header = () => {
   const { theme, toggleTheme } = useTheme();
@@ -14,18 +15,13 @@ const Header = () => {
 
   useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 10) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
+      setIsScrolled(window.scrollY > 10);
     };
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close mobile menu when location changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location]);
@@ -33,7 +29,7 @@ const Header = () => {
   const navItems = [
     { name: 'Home', path: '/', icon: <HomeIcon size={18} /> },
     { name: 'Browse', path: '/browse', icon: <Film size={18} /> },
-    { name: 'Batch Download', path: '/batch-download', icon: <Download size={18} /> },
+    { name: 'Batch Download', path: '../pages/BatchDownload.jsx', icon: <Download size={18} /> },
   ];
 
   const isActive = (path) => {
@@ -54,21 +50,14 @@ const Header = () => {
         <div className="flex items-center justify-between py-4">
           {/* Logo */}
           <Link to="/" className="flex items-center">
-            <motion.div
+            <motion.img
+              src={elainaLogo}
+              alt="Daunnime Logo"
               initial={{ rotate: -10 }}
               animate={{ rotate: 0 }}
               transition={{ duration: 0.5 }}
-              className="mr-2"
-            >
-              <span className="text-blue-600 dark:text-blue-400">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L4 7V17L12 22L20 17V7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="rgba(37, 99, 235, 0.2)" />
-                  <path d="M12 22V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M12 12L20 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M12 12L4 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-            </motion.div>
+              className="w-8 h-8 mr-2 rounded-full object-cover"
+            />
             <motion.h1 
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
@@ -78,6 +67,13 @@ const Header = () => {
               Daunnime
             </motion.h1>
           </Link>
+
+          {/* Mobile Navigation */}
+          <div className="md:hidden">
+            <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+              {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
