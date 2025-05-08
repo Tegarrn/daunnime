@@ -187,53 +187,8 @@ export const getBatchDownload = async (batchId) => {
         };
       }
       
-      // If anime details has episodes, try to construct a batch from episode data
-      if (animeDetails && animeDetails.episodes && Array.isArray(animeDetails.episodes) && animeDetails.episodes.length > 0) {
-        console.log(`✅ Attempting to construct batch data from episodes for ${batchId}`);
-        
-        // Get the last episode data if available
-        try {
-          const lastEpisode = animeDetails.episodes[0];
-          if (lastEpisode && lastEpisode.id) {
-            const episodeData = await getEpisodeData(lastEpisode.id);
-            
-            if (episodeData && episodeData.downloads) {
-              return {
-                data: {
-                  title: animeDetails.title,
-                  poster: animeDetails.poster || animeDetails.thumbnail,
-                  downloadLinks: episodeData.downloads,
-                  episodeSource: lastEpisode.id,
-                  note: "Batch tidak tersedia. Menampilkan download untuk episode terakhir."
-                },
-                title: animeDetails.title
-              };
-            }
-          }
-        } catch (episodeError) {
-          console.warn(`⚠️ Could not get episode data for ${batchId}:`, episodeError);
-        }
-      }
-      
-      // Create a placeholder batch for anime without batch download
-      console.log(`ℹ️ Creating placeholder batch for ${batchId}`);
-      
-      // Return a placeholder object that indicates batch download isn't available
-      // but still includes anime info for UI display
-      return {
-        data: {
-          title: animeDetails.title || "Unknown Anime",
-          poster: animeDetails.poster || animeDetails.thumbnail || "",
-          status: animeDetails.status || "Completed",
-          type: animeDetails.type || "TV",
-          downloadLinks: [],
-          batchAvailable: false,
-          message: "Batch download belum tersedia untuk anime ini."
-        },
-        title: animeDetails.title || "Unknown Anime",
-        batchAvailable: false
-      };
-      
+      // If no batch info available
+      throw new Error('Batch download information not available for this anime');
     } catch (fallbackError) {
       console.error(`❌ Both batch endpoints failed for ${batchId}:`, fallbackError);
       throw new Error(`Batch download not available: ${fallbackError.message}`);
