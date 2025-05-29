@@ -4,199 +4,191 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://animek-api-rho.vercel.a
 // Helper function for API requests with better error handling
 const fetchWithErrorHandling = async (url, options = {}) => {
   console.log(`📡 Fetching: ${url}`);
+  
+  // Gabungkan options default dengan options yang mungkin di-pass
+  const fetchOptions = {
+    ...options, // options yang mungkin di-pass dari fetchWithRetry (seperti method, body, dll.)
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', // User-Agent umum
+      // Anda bisa menambahkan header lain di sini jika diperlukan, misal:
+      // 'Accept': 'application/json',
+      // 'Content-Type': 'application/json', // Hanya jika Anda mengirim body JSON (misalnya untuk POST)
+      ...(options.headers || {}), // Gabungkan dengan header yang mungkin sudah ada di options
+    },
+    // mode: 'cors', // uncomment jika ada masalah CORS, tapi 403 biasanya bukan CORS murni
+  };
+
+  // Hapus Content-Type jika tidak ada body (penting untuk GET request)
+  if (!fetchOptions.body && fetchOptions.headers['Content-Type'] === 'application/json') {
+    delete fetchOptions.headers['Content-Type'];
+  }
+
+
   try {
-    const response = await fetch(url, options);
-    
-    // Log response status
+    const response = await fetch(url, fetchOptions); // Menggunakan fetchOptions yang sudah dimodifikasi
     console.log(`📥 Response status: ${response.status} for ${url}`);
-    
+    console.log(`📄 Response headers for ${url}:`, Object.fromEntries(response.headers.entries()));
+
+
     if (!response.ok) {
-      // Try to get more detailed error info if available
       let errorDetail = '';
       try {
+        // Coba baca respons sebagai JSON dulu jika gagal
         const errorData = await response.json();
         errorDetail = errorData.message || errorData.error || JSON.stringify(errorData);
-      } catch {
-        errorDetail = response.statusText;
+      } catch (e) {
+        // Jika gagal baca sebagai JSON (mungkin bukan JSON atau kosong), baca sebagai teks
+        try {
+            errorDetail = await response.text();
+        } catch (textError){
+            errorDetail = response.statusText; // Fallback ke statusText
+        }
       }
-      
-      throw new Error(`API Error (${response.status}): ${errorDetail}`);
+      // Log detail error dari server jika ada
+      console.error(`❌ Server error detail for ${url} (${response.status}):`, errorDetail);
+      throw new Error(`API Error (${response.status}): ${errorDetail || response.statusText}`);
     }
-    
-    // Check if the response is valid JSON
+
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
       try {
         const data = await response.json();
-        console.log(`✅ Success for ${url}`, data);
+        console.log(`✅ Success (JSON) for ${url}`, data);
         return data;
       } catch (error) {
         console.error(`❌ JSON parsing error for ${url}:`, error);
         throw new Error(`Failed to parse JSON response: ${error.message}`);
       }
     } else {
-      // For non-JSON responses, get text and try to parse it
       const text = await response.text();
-      console.log(`✅ Received text response for ${url}`);
-      
-      // Try to parse as JSON if it looks like JSON
+      console.log(`✅ Success (Non-JSON text) for ${url}:`, text.substring(0, 100) + "..."); // Log sebagian kecil dari teks
+      // Jika respons diharapkan JSON tapi tidak, ini bisa jadi masalah.
+      // Namun, jika API terkadang mengembalikan teks (misal, HTML error page dari server proxy), ini menanganinya.
+      // Untuk kasus umum API Anda, Anda mungkin selalu mengharapkan JSON.
+      // Jika 'text' seharusnya JSON, coba parse di sini juga.
       if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
         try {
           const data = JSON.parse(text);
-          console.log(`✅ Parsed text response as JSON for ${url}`, data);
+          console.log(`✅ Parsed non-JSON text response as JSON for ${url}`, data);
           return data;
         } catch (error) {
-          console.warn(`⚠️ Text response looks like JSON but couldn't be parsed for ${url}`);
+          console.warn(`⚠️ Non-JSON text response for ${url} looks like JSON but couldn't be parsed. Returning text.`);
         }
       }
-      
-      // Return text as fallback
-      return { success: true, text };
+      // Jika API Anda seharusnya selalu JSON, mengembalikan teks bisa jadi error di sisi client.
+      // Pertimbangkan untuk throw error jika contentType bukan JSON dan Anda selalu mengharapkannya.
+      // throw new Error(`Received non-JSON response from server: ${contentType}`);
+      return { success: true, text_response: text }; // Atau sesuaikan bagaimana Anda ingin menangani respons non-JSON
     }
   } catch (error) {
-    console.error(`❌ Error for ${url}:`, error);
-    
-    // Add more context to the error
-    const enhancedError = new Error(`Request failed for ${url.split('/').slice(-2).join('/')}: ${error.message}`);
-    enhancedError.originalError = error;
-    enhancedError.url = url;
-    throw enhancedError;
+    // Pastikan error yang di-throw dari blok try di atas juga ditangkap di sini
+    if (!error.url) { // Jika error berasal dari fetch atau parsing, tambahkan konteks
+        console.error(`❌ Network or Parsing Error for ${url}:`, error);
+        const enhancedError = new Error(`Request failed for ${url.split('/').slice(-2).join('/')}: ${error.message}`);
+        enhancedError.originalError = error;
+        enhancedError.url = url;
+        throw enhancedError;
+    }
+    throw error; // Re-throw error yang sudah memiliki konteks
   }
 };
 
-// Retry mechanism for API requests
+// Retry mechanism for API requests (dari file Anda)
 const fetchWithRetry = async (url, options = {}, retries = 2, delay = 1000) => {
   try {
     return await fetchWithErrorHandling(url, options);
   } catch (error) {
+    // Hanya retry untuk error jaringan atau server tertentu, bukan 403 jika itu final.
+    // Untuk error 403, retry mungkin tidak akan mengubah hasil jika disebabkan oleh header/izin.
+    // Namun, jika 403 bersifat sementara (misal, WAF yang terlalu sensitif), retry bisa saja membantu.
+    // Untuk sekarang, logika retry standar tetap dipertahankan.
     if (retries <= 0) {
       throw error;
     }
-    
-    console.log(`⏱️ Retrying request to ${url} in ${delay}ms... (${retries} retries left)`);
+    console.log(`⏱️ Retrying request to ${url} in ${delay}ms... (${retries} retries left). Error: ${error.message}`);
     await new Promise(resolve => setTimeout(resolve, delay));
     return fetchWithRetry(url, options, retries - 1, delay * 1.5);
   }
 };
 
-// Home page data
-export const getHomeData = async () => {
-  return fetchWithRetry(`${API_URL}/samehadaku/home`);
+// --- Implementasi Fungsi API Otakudesu (tetap sama seperti sebelumnya) ---
+
+export const getAnimeList = () =>
+  fetchWithRetry(`${API_URL}/otakudesu/home`);
+
+export const getAnimeDetails = (animeId) => {
+  if (!animeId) return Promise.reject(new Error('Anime ID is required'));
+  return fetchWithRetry(`${API_URL}/otakudesu/anime/${animeId}`);
 };
 
-// Recent anime
-export const getRecentAnime = async (page = 1) => {
-  return fetchWithRetry(`${API_URL}/samehadaku/recent?page=${page}`);
+export const searchAnime = (query, page) => {
+  if (!query) return Promise.reject(new Error('Search query is required'));
+  let searchUrl = `${API_URL}/otakudesu/search?q=${encodeURIComponent(query)}`;
+  if (page) {
+    searchUrl += `&page=${page}`;
+  }
+  return fetchWithRetry(searchUrl);
 };
 
-// Popular anime
-export const getPopularAnime = async (page = 1) => {
-  return fetchWithRetry(`${API_URL}/samehadaku/popular?page=${page}`);
+export const getEpisodeDetails = (episodeId) => {
+  if (!episodeId) return Promise.reject(new Error('Episode ID is required'));
+  return fetchWithRetry(`${API_URL}/otakudesu/episode/${episodeId}`);
 };
 
-// Search anime
-export const searchAnime = async (query, page = 1) => {
-  if (!query) throw new Error('Search query is required');
-  return fetchWithRetry(`${API_URL}/samehadaku/search?q=${encodeURIComponent(query)}&page=${page}`);
+export const getStreamingServerLink = (serverId) => {
+  if (!serverId) return Promise.reject(new Error('Server ID is required'));
+  return fetchWithRetry(`${API_URL}/otakudesu/server/${serverId}`);
 };
 
-// Get anime details
-export const getAnimeDetails = async (animeId) => {
-  if (!animeId) throw new Error('Anime ID is required');
-  return fetchWithRetry(`${API_URL}/samehadaku/anime/${animeId}`);
-};
-
-// Get episode data
-export const getEpisodeData = async (episodeId) => {
-  if (!episodeId) throw new Error('Episode ID is required');
-  return fetchWithRetry(`${API_URL}/samehadaku/episode/${episodeId}`);
-};
-
-// Get server streaming data
-export const getServerData = async (serverId) => {
-  if (!serverId) throw new Error('Server ID is required');
-  return fetchWithRetry(`${API_URL}/samehadaku/server/${serverId}`);
-};
-
-// Get ongoing anime
-export const getOngoingAnime = async (page = 1, order = 'title') => {
-  return fetchWithRetry(`${API_URL}/samehadaku/ongoing?page=${page}&order=${order}`);
-};
-
-// Get completed anime
-export const getCompletedAnime = async (page = 1, order = 'title') => {
-  return fetchWithRetry(`${API_URL}/samehadaku/completed?page=${page}&order=${order}`);
-};
-
-// Get anime movies
-export const getAnimeMovies = async (page = 1) => {
-  return fetchWithRetry(`${API_URL}/samehadaku/movies?page=${page}`);
-};
-
-// Get anime by genre
-export const getAnimeByGenre = async (genreId, page = 1) => {
-  if (!genreId) throw new Error('Genre ID is required');
-  return fetchWithRetry(`${API_URL}/samehadaku/genres/${genreId}?page=${page}`);
-};
-
-// Get all genres
-export const getAllGenres = async () => {
-  return fetchWithRetry(`${API_URL}/samehadaku/genres`);
-};
-
-// Get all anime list
-export const getAllAnime = async () => {
-  return fetchWithRetry(`${API_URL}/samehadaku/anime`);
-};
-
-// Get anime schedule
-export const getAnimeSchedule = async () => {
-  return fetchWithRetry(`${API_URL}/samehadaku/schedule`);
-};
-
-// Get batch download with improved error handling
 export const getBatchDownload = async (batchId) => {
   if (!batchId) throw new Error('Batch ID is required');
-  
   try {
-    // First try the direct batch endpoint
-    return await fetchWithRetry(`${API_URL}/samehadaku/batch/${batchId}`);
+    const batchResponse = await fetchWithRetry(`${API_URL}/otakudesu/batch/${batchId}`);
+    return batchResponse.data ? batchResponse : { data: batchResponse };
   } catch (error) {
-    console.log(`⚠️ Primary batch endpoint failed, trying fallback for ${batchId}...`);
-    
+    console.warn(`Primary batch endpoint /otakudesu/batch/${batchId} failed. Trying fallback...`);
     try {
-      // If the direct batch endpoint fails, try to get batch info from anime details
-      const animeDetails = await getAnimeDetails(batchId);
-      
-      // Check if anime details has batch download info
-      if (animeDetails && animeDetails.batch) {
-        console.log(`✅ Successfully retrieved batch data from anime details for ${batchId}`);
-        return { data: animeDetails.batch, title: animeDetails.title };
+      const animeDetailsResponse = await getAnimeDetails(batchId);
+      if (animeDetailsResponse && animeDetailsResponse.data) {
+        const animeData = animeDetailsResponse.data;
+        if (animeData.batch_download_links && animeData.batch_download_links.length > 0) {
+          return {
+            data: {
+              title: animeData.title,
+              poster: animeData.poster,
+              downloadLinks: animeData.batch_download_links,
+            }
+          };
+        }
       }
-      
-      // If anime details doesn't have batch info but has download links, construct batch data
-      if (animeDetails && animeDetails.downloads) {
-        console.log(`✅ Constructing batch data from anime downloads for ${batchId}`);
-        return {
-          data: {
-            title: animeDetails.title,
-            poster: animeDetails.poster || animeDetails.thumbnail,
-            downloadLinks: animeDetails.downloads
-          },
-          title: animeDetails.title
-        };
-      }
-      
-      // If no batch info available
-      throw new Error('Batch download information not available for this anime');
+      throw new Error('Batch download not available via fallback.');
     } catch (fallbackError) {
-      console.error(`❌ Both batch endpoints failed for ${batchId}:`, fallbackError);
-      throw new Error(`Batch download not available: ${fallbackError.message}`);
+      throw new Error(`Batch download failed: ${fallbackError.message}`);
     }
   }
 };
 
-// Get batch list
-export const getBatchList = async (page = 1) => {
-  return fetchWithRetry(`${API_URL}/samehadaku/batch?page=${page}`);
+export const getGenres = () =>
+  fetchWithRetry(`${API_URL}/otakudesu/genres`);
+
+export const getAnimeByGenre = (genreId, page = 1) => {
+  if (!genreId) return Promise.reject(new Error('Genre ID is required'));
+  return fetchWithRetry(`${API_URL}/otakudesu/genres/${genreId}?page=${page}`);
 };
+
+export const getReleaseSchedule = () =>
+  fetchWithRetry(`${API_URL}/otakudesu/schedule`);
+
+export const getOngoingAnime = (page = 1) =>
+  fetchWithRetry(`${API_URL}/otakudesu/ongoing?page=${page}`);
+
+export const getCompletedAnime = (page = 1) =>
+  fetchWithRetry(`${API_URL}/otakudesu/completed?page=${page}`);
+
+export const getAllAnimeList = () =>
+  fetchWithRetry(`${API_URL}/otakudesu/anime`);
+
+// --- Alias untuk kompatibilitas dengan Home.jsx yang ada ---
+export const getHomeData = getAnimeList;
+export const getRecentAnime = getOngoingAnime;
+export const getPopularAnime = getCompletedAnime;

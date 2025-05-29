@@ -1,469 +1,276 @@
 // src/pages/Watch.jsx
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getEpisodeData } from '../services/api';
-import VideoPlayer from '../components/VideoPlayer';
-import BatchDownloadSection from '../components/BatchDownloadSection';
+import { getEpisodeDetails, getStreamingServerLink, getAnimeDetails } from '../services/api';
 import Loader from '../components/Loader';
-import { Download, ArrowDown, Clock, Calendar, Info } from 'lucide-react';
+import VideoPlayer from '../components/VideoPlayer';
+import { AlertTriangle, ChevronLeft, ChevronRight, List, Download, PlayCircle } from 'lucide-react'; // ExternalLink dihapus jika tidak dipakai, PlayCircle ditambahkan
+// import {Helmet} from "react-helmet-async"; // Dihapus
 
 const Watch = () => {
   const { episodeId } = useParams();
   const navigate = useNavigate();
   const [episodeData, setEpisodeData] = useState(null);
+  const [animeDetails, setAnimeDetails] = useState(null);
+  const [currentServer, setCurrentServer] = useState(null);
+  const [videoUrl, setVideoUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [playerError, setPlayerError] = useState(null);
-  const [isFullPlayer, setIsFullPlayer] = useState(false);
-  const [debug, setDebug] = useState({
-    episodeId: episodeId,
-    apiCalls: [],
-    dataStructure: null
-  });
+  const [loadingServer, setLoadingServer] = useState(false);
 
-  useEffect(() => {
-    const fetchEpisodeData = async () => {
-      if (!episodeId) {
-        setError('Invalid episode ID');
+  const fetchEpisodeAndAnimeData = useCallback(async () => {
+    if (!episodeId) {
+        setError("ID Episode tidak valid.");
         setLoading(false);
         return;
-      }
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await getEpisodeDetails(episodeId);
+      let epData = response.data || response;
+      setEpisodeData(epData);
 
-      try {
-        setLoading(true);
-        setError(null);
-        setPlayerError(null);
-        
-        // Log the request
-        setDebug(prev => ({
-          ...prev,
-          apiCalls: [...prev.apiCalls, {
-            time: new Date().toISOString(),
-            action: 'REQUEST',
-            endpoint: `/samehadaku/episode/${episodeId}`
-          }]
-        }));
-        
-        const data = await getEpisodeData(episodeId);
-        console.log('Raw episode data:', data);
-        
-        // Log the response
-        setDebug(prev => ({
-          ...prev,
-          apiCalls: [...prev.apiCalls, {
-            time: new Date().toISOString(),
-            action: 'RESPONSE',
-            endpoint: `/samehadaku/episode/${episodeId}`,
-            status: 'success',
-            dataSnapshot: data
-          }]
-        }));
-        
-        // Detailed validation of the response data
-        if (!data) {
-          throw new Error('Empty response from API');
-        }
-        
-        if (!data.data) {
-          throw new Error('Missing data field in response');
-        }
-        
-        // Initialize an empty processed data object with default values
-        let processedData = {
-          title: '',
-          animeTitle: 'Unknown Anime',
-          animeId: '',
-          episodeNumber: '',
-          servers: [],
-          nextEpisodeId: null,
-          prevEpisodeId: null,
-          defaultStreamingUrl: null, // Add this field
-          releaseDate: data.data.releaseDate || null,
-          uploadDate: data.data.uploadDate || data.data.date || null
-        };
-        
-        // Extract basic episode info
-        processedData.title = data.data.title || '';
-        processedData.animeTitle = data.data.animeTitle || data.data.animeName || 'Unknown Anime';
-        processedData.animeId = data.data.animeId || '';
-        processedData.episodeNumber = data.data.episodeNumber || data.data.number || '';
-        processedData.nextEpisodeId = data.data.nextEpisode?.episodeId || data.data.nextId || null;
-        processedData.prevEpisodeId = data.data.prevEpisode?.episodeId || data.data.prevId || null;
-        
-        // Extract defaultStreamingUrl if available (important!)
-        processedData.defaultStreamingUrl = data.data.defaultStreamingUrl || null;
-        
-        // Make the episode data available to the window object for the VideoPlayer component
-        window.episodeData = processedData;
-        
-        // Extract servers with special handling for different data structures
-        if (Array.isArray(data.data.servers)) {
-          processedData.servers = data.data.servers.map(server => ({
-            id: server.id || server.serverId || `server-${Math.random().toString(36).substring(2, 9)}`,
-            name: server.name || server.label || 'Unknown Server',
-            url: server.url || server.embedUrl || null
-          }));
-        } else if (data.data.videoSources && Array.isArray(data.data.videoSources)) {
-          processedData.servers = data.data.videoSources.map(source => ({
-            id: source.id || source.serverId || `source-${Math.random().toString(36).substring(2, 9)}`,
-            name: source.name || source.label || 'Video Source',
-            url: source.url || source.src || null
-          }));
-        } else if (typeof data.data.servers === 'object' && data.data.servers !== null) {
-          // If servers is an object, convert to array
-          processedData.servers = Object.keys(data.data.servers).map(key => ({
-            id: key,
-            name: data.data.servers[key].name || key,
-            url: data.data.servers[key].url || null
-          }));
-        }
-        
-        // Create a default server for the defaultStreamingUrl if it exists 
-        // and no other servers were found
-        if (processedData.servers.length === 0 && processedData.defaultStreamingUrl) {
-          processedData.servers.push({
-            id: 'default-server',
-            name: 'Default Server',
-            url: processedData.defaultStreamingUrl
-          });
-        }
-        
-        // Special case handling for direct embed URLs
-        if (processedData.servers.length === 0) {
-          // Check for various URL fields that might contain video sources
-          const possibleUrlFields = [
-            'embedUrl', 'videoUrl', 'streamingUrl', 'url', 
-            'videoSource', 'streamSource', 'embedCode'
-          ];
-          
-          for (const field of possibleUrlFields) {
-            if (data.data[field]) {
-              processedData.servers.push({
-                id: `direct-${field}`,
-                name: `Server ${processedData.servers.length + 1}`,
-                url: data.data[field]
-              });
-              break; // Found one URL, no need to continue
+      const parentAnimeId = epData?.anime?.id || epData?.anime_id || epData?.animeId;
+      if (parentAnimeId) {
+        try {
+            const animeRes = await getAnimeDetails(parentAnimeId);
+            const animeParentData = animeRes.data || animeRes;
+            setAnimeDetails(animeParentData);
+            // Mengatur judul dokumen setelah animeDetails dan episodeData ada
+            if (epData && epData.title && animeParentData && animeParentData.title) {
+                document.title = `Nonton ${epData.title} - ${animeParentData.title} - DaunNime`;
+            } else if (epData && epData.title) {
+                document.title = `Nonton ${epData.title} - DaunNime`;
+            } else {
+                document.title = "Nonton Anime - DaunNime";
             }
-          }
-          
-          // If still no servers and we have a streaming URL at the root level
-          if (processedData.servers.length === 0 && data.data.stream) {
-            processedData.servers.push({
-              id: 'direct-stream',
-              name: 'Default Stream',
-              url: data.data.stream
-            });
-          }
+        } catch (animeErr) {
+            console.warn("Could not fetch parent anime details for episode list:", animeErr);
+            if (epData && epData.title) { // Fallback title jika detail anime gagal
+                document.title = `Nonton ${epData.title} - DaunNime`;
+            }
         }
-        
-        // If we have a defaultStreamingUrl but no servers, create one server
-        if (processedData.servers.length === 0 && processedData.defaultStreamingUrl) {
-          processedData.servers.push({
-            id: 'default',
-            name: 'Default Server',
-            url: processedData.defaultStreamingUrl
-          });
-        }
-        
-        // If the episode has nextEpisode/prevEpisode objects, process them properly
-        if (data.data.nextEpisode && typeof data.data.nextEpisode === 'object') {
-          processedData.nextEpisodeId = data.data.nextEpisode.episodeId;
-        }
-        
-        if (data.data.prevEpisode && typeof data.data.prevEpisode === 'object') {
-          processedData.prevEpisodeId = data.data.prevEpisode.episodeId;
-        }
-        
-        console.log('Processed episode data:', processedData);
-        
-        // Store the processed data structure for debugging
-        setDebug(prev => ({
-          ...prev,
-          dataStructure: processedData
-        }));
-        
-        setEpisodeData(processedData);
-      } catch (err) {
-        console.error('Error fetching episode data:', err);
-        
-        // Log the error for debugging
-        setDebug(prev => ({
-          ...prev,
-          apiCalls: [...prev.apiCalls, {
-            time: new Date().toISOString(),
-            action: 'ERROR',
-            endpoint: `/samehadaku/episode/${episodeId}`,
-            error: err.message,
-            stack: err.stack
-          }]
-        }));
-        
-        setError(`Failed to load episode data: ${err.message}`);
-      } finally {
-        setLoading(false);
+      } else if (epData && epData.title) { // Fallback title jika tidak ada parentAnimeId
+        document.title = `Nonton ${epData.title} - DaunNime`;
       }
-    };
 
-    fetchEpisodeData();
-    // Scroll to top when episode changes
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    
-    // Cleanup function - remove episodeData from window when component unmounts
-    return () => {
-      delete window.episodeData;
-    };
-  }, [episodeId]);
 
-  const handlePlayerError = (errorMsg) => {
-    setPlayerError(errorMsg);
-    
-    // Log player errors for debugging
-    setDebug(prev => ({
-      ...prev,
-      apiCalls: [...prev.apiCalls, {
-        time: new Date().toISOString(),
-        action: 'PLAYER_ERROR',
-        error: errorMsg
-      }]
-    }));
-  };
+      if (epData && epData.servers && epData.servers.length > 0) {
+        const preferredServer = epData.servers.find(s => s.type === 'direct_link' || (s.name && s.name.toLowerCase().includes('direct'))) || epData.servers[0];
+        handleServerChange(preferredServer);
+      } else if (epData && epData.videoUrl) {
+        setVideoUrl(epData.videoUrl);
+        setCurrentServer({name: "Default Source", url: epData.videoUrl});
+      } else {
+        console.warn("No servers found for this episode.");
+      }
 
-  const handleRetry = () => {
-    // Force reload the current page
-    window.location.reload();
-  };
+    } catch (err) {
+      console.error("Failed to fetch episode data:", err);
+      setError(err.message || 'Gagal memuat data episode.');
+      document.title = "Error Nonton Anime - DaunNime";
+    } finally {
+      setLoading(false);
+    }
+  }, [episodeId]); // handleServerChange dihapus dari dependency array untuk menghindari loop jika dia memodifikasi state yang memicu useEffect ini
 
-  const handleFullScreenToggle = (isFullscreen) => {
-    setIsFullPlayer(isFullscreen);
-  };
+  // useEffect untuk handleServerChange, dipisah agar tidak menyebabkan re-fetch data utama
+   const handleServerChange = useCallback(async (server) => { // useCallback ditambahkan
+    if (!server) return;
+    setCurrentServer(server);
+    setLoadingServer(true);
+    setVideoUrl(''); 
+    setError(null); // Reset error server sebelumnya
 
-  if (loading) {
+    try {
+      let serverIdentifier = server.id || server.stream_id || server.value; // stream_id atau value mungkin digunakan oleh beberapa API
+      
+      if (server.url && (server.type === 'embed' || !serverIdentifier) ) { // Jika server.url adalah link embed atau tidak ada identifier untuk API
+        setVideoUrl(server.url);
+      } else if (serverIdentifier) {
+         const streamResponse = await getStreamingServerLink(serverIdentifier);
+        const actualUrl = streamResponse?.data?.url || streamResponse?.url || (streamResponse?.data?.link) || (streamResponse?.link);
+        if (!actualUrl) throw new Error ("URL streaming tidak ditemukan dari server.");
+        setVideoUrl(actualUrl);
+      } else {
+        throw new Error("Server identifier tidak ditemukan untuk mengambil link streaming.");
+      }
+    } catch (err) {
+      console.error(`Failed to fetch streaming link for server ${server.name}:`, err);
+      setError(`Gagal memuat video dari server ${server.name}. ${err.message}`);
+      setVideoUrl('');
+    } finally {
+        setLoadingServer(false);
+    }
+  }, []); // Dependency kosong karena ini utility function yang dipanggil manual
+
+  useEffect(() => {
+    fetchEpisodeAndAnimeData();
+  }, [fetchEpisodeAndAnimeData]);
+
+
+  const episodeTitleForDisplay = episodeData?.title || `Episode ${episodeId.split('-').pop()}`;
+
+
+  if (loading && !episodeData) { // Hanya loading utama jika episodeData belum ada
+    return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader /></div>;
+  }
+
+  if (error && !episodeData) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <Loader />
-      </div>
+        <div className="container mx-auto px-4 py-8 text-center">
+            <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
+            <p className="text-red-500 text-xl mb-3">Gagal Memuat Episode</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
+            <button
+            onClick={fetchEpisodeAndAnimeData}
+            className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            >
+            Coba Lagi
+            </button>
+        </div>
     );
   }
+  
+  const serverFetchError = error && episodeData; // Error spesifik server
 
-  if (error || !episodeData) {
-    return (
-      <div className="container mx-auto px-4 py-10 text-center">
-        <p className="text-red-500 text-lg mb-4">{error || 'Episode not found'}</p>
-        
-        <div className="flex justify-center gap-4 mb-6">
-          <button
-            onClick={handleRetry}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Retry Loading
-          </button>
-          
-          <Link 
-            to="/" 
-            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-          >
-            Back to Home
-          </Link>
-        </div>
-        
-        {/* Debug information */}
-        <div className="mt-8 text-left bg-gray-100 dark:bg-gray-800 p-4 rounded">
-          <h3 className="font-medium text-lg mb-2">Debug Information</h3>
-          <p className="text-sm mb-2">Episode ID: <code>{debug.episodeId}</code></p>
-          
-          <div className="overflow-auto max-h-64 text-xs">
-            <pre>{JSON.stringify(debug, null, 2)}</pre>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Special case: if we have defaultStreamingUrl but no servers
-  if (episodeData.defaultStreamingUrl && episodeData.servers.length === 0) {
-    episodeData.servers.push({
-      id: 'default-server',
-      name: 'Default Server',
-      url: episodeData.defaultStreamingUrl
-    });
-  }
 
   return (
-    <div className="container mx-auto px-4 py-6">
-      {/* Navigation Breadcrumb with enhanced styling */}
-      <div className="mb-4 bg-gray-50 dark:bg-gray-800/50 p-2 px-4 rounded-lg flex items-center">
-        {episodeData.animeId ? (
-          <Link 
-            to={`/anime/${episodeData.animeId}`}
-            className="text-blue-500 hover:underline flex items-center"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span>{episodeData.animeTitle}</span>
-          </Link>
-        ) : (
-          <Link 
-            to="/" 
-            className="text-blue-500 hover:underline flex items-center"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            <span>Home</span>
-          </Link>
-        )}
-        <span className="mx-2 text-gray-400">/</span>
-        <span className="text-gray-600 dark:text-gray-300">Episode {episodeData.episodeNumber}</span>
-      </div>
-      
-      {/* Episode Title & Info */}
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold mb-2 dark:text-white">
-          {episodeData.animeTitle} - Episode {episodeData.episodeNumber}
-          {episodeData.title && ` - ${episodeData.title}`}
-        </h1>
-        
-        <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
-          {episodeData.uploadDate && (
-            <div className="flex items-center">
-              <Calendar size={16} className="mr-1" />
-              <span>Released: {new Date(episodeData.uploadDate).toLocaleDateString()}</span>
+    <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
+        {/* <Helmet> Dihapus </Helmet> */}
+      <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-hidden">
+        <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-1">
+            {animeDetails?.title ? `${animeDetails.title} - ` : ''}{episodeTitleForDisplay}
+          </h1>
+          {animeDetails?.id && (
+             <Link to={`/anime/${animeDetails.id}`} className="text-sm text-blue-500 dark:text-blue-400 hover:underline">
+                Kembali ke Detail Anime
+            </Link>
+          )}
+        </div>
+
+        <div className="aspect-video bg-black">
+          {loadingServer && <div className="w-full h-full flex justify-center items-center"><Loader /> <p className="ml-2 text-white">Memuat server...</p></div>}
+          {!loadingServer && videoUrl && 
+            <VideoPlayer 
+                src={videoUrl} 
+                poster={animeDetails?.poster || episodeData?.thumbnail} 
+                // serverId tidak lagi relevan jika VideoPlayer hanya menerima src
+                // serverOptions bisa dihilangkan dari VideoPlayer jika pemilihan server dilakukan di Watch.jsx
+            />
+          }
+          {!loadingServer && !videoUrl && !serverFetchError && (
+            <div className="w-full h-full flex flex-col justify-center items-center text-gray-400 p-4">
+                <PlayCircle size={64} className="mb-4 opacity-50" />
+                <p>Pilih server di bawah untuk memulai streaming.</p>
+                {(!episodeData || !episodeData.servers || episodeData.servers.length === 0) && !episodeData?.videoUrl &&
+                    <p className="mt-2 text-yellow-500">Tidak ada server streaming yang tersedia untuk episode ini.</p>
+                }
             </div>
           )}
+           {!loadingServer && !videoUrl && serverFetchError && (
+             <div className="w-full h-full flex flex-col justify-center items-center text-red-400 p-4">
+                <AlertTriangle size={64} className="mb-4 opacity-80" />
+                <p className="font-semibold">Gagal memuat video dari server ini.</p>
+                <p className="text-sm">{error}</p> {/* Menampilkan pesan error server */}
+                <p className="text-sm mt-2">Silakan coba server lain.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 sm:p-6">
+            {episodeData && episodeData.servers && episodeData.servers.length > 0 && (
+            <div className="mb-6">
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Pilih Server:</h2>
+                <div className="flex flex-wrap gap-2">
+                {episodeData.servers.map((server, index) => (
+                    <button
+                    key={server.id || server.name || index} // Pastikan key unik
+                    onClick={() => handleServerChange(server)} // Kirim objek server utuh
+                    disabled={loadingServer}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors
+                                ${currentServer && (currentServer.id === server.id || currentServer.name === server.name) // Penyesuaian perbandingan
+                                ? 'bg-blue-600 text-white shadow-lg'
+                                : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'}
+                                ${loadingServer ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                    {server.name || `Server ${index + 1}`}
+                    {server.quality && <span className="ml-1 text-xs opacity-80">({server.quality})</span>}
+                    </button>
+                ))}
+                </div>
+            </div>
+            )}
+            {episodeData && (!episodeData.servers || episodeData.servers.length === 0) && !episodeData.videoUrl && !loading &&
+                 <p className="text-yellow-500 dark:text-yellow-400 text-sm mb-4">Tidak ada pilihan server yang tersedia untuk episode ini.</p>
+            }
+
+          <div className="flex justify-between items-center mb-4">
+            {episodeData?.prev_episode_id || episodeData?.prevEp ? (
+              <Link
+                to={`/watch/${episodeData.prev_episode_id || episodeData.prevEp.id || episodeData.prevEp.episodeId}`}
+                className="inline-flex items-center px-4 py-2 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md transition-colors"
+              >
+                <ChevronLeft size={18} className="mr-1" /> Episode Sebelumnya
+              </Link>
+            ) : <div className="w-1/3" />}
+            {animeDetails?.id && (
+                <Link to={`/anime/${animeDetails.id}#episode-list`} className="px-4 py-2 text-sm bg-indigo-100 dark:bg-indigo-700 text-indigo-700 dark:text-indigo-100 rounded-md hover:bg-indigo-200 dark:hover:bg-indigo-600 transition-colors flex items-center">
+                    <List size={16} className="mr-2"/> Daftar Episode
+                </Link>
+            )}
+            {episodeData?.next_episode_id || episodeData?.nextEp ? (
+              <Link
+                to={`/watch/${episodeData.next_episode_id || episodeData.nextEp.id || episodeData.nextEp.episodeId}`}
+                className="inline-flex items-center px-4 py-2 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md transition-colors"
+              >
+                Episode Berikutnya <ChevronRight size={18} className="ml-1" />
+              </Link>
+            ) : <div className="w-1/3"/>}
+          </div>
           
-          {episodeData.releaseDate && (
-            <div className="flex items-center">
-              <Clock size={16} className="mr-1" />
-              <span>Aired: {new Date(episodeData.releaseDate).toLocaleDateString()}</span>
+          {episodeData?.download_links && episodeData.download_links.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="text-md font-semibold text-gray-700 dark:text-gray-200 mb-2">Opsi Unduhan Episode:</h3>
+                <div className="flex flex-wrap gap-2">
+                    {episodeData.download_links.map((dlink, i) => (
+                        <a 
+                            href={dlink.url} 
+                            key={i} target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-1.5 text-xs bg-green-100 dark:bg-green-700 hover:bg-green-200 dark:hover:bg-green-600 text-green-700 dark:text-green-100 rounded-md"
+                        >
+                            <Download size={14} className="mr-1.5"/> {dlink.quality || dlink.host || `Link ${i+1}`}
+                        </a>
+                    ))}
+                </div>
             </div>
           )}
-        </div>
-      </div>
-      
-      {/* Video Player Section */}
-      <div className="mb-6">
-        {episodeData.servers && episodeData.servers.length > 0 ? (
-          <VideoPlayer 
-            serverId={episodeData.servers[0].id}
-            serverOptions={episodeData.servers}
-            onError={handlePlayerError}
-            onFullScreenToggle={handleFullScreenToggle}
-          />
-        ) : episodeData.defaultStreamingUrl ? (
-          <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-xl">
-            <iframe 
-              src={episodeData.defaultStreamingUrl}
-              className="w-full h-full" 
-              allowFullScreen
-              title={episodeData.title}
-            ></iframe>
-          </div>
-        ) : (
-          <div className="aspect-video bg-gray-800 text-white flex items-center justify-center rounded-lg overflow-hidden shadow-xl">
-            <p>No streaming servers available</p>
-          </div>
-        )}
-      </div>
-      
-      {/* Error Message */}
-      {playerError && (
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-r-lg shadow-sm">
-          <div className="flex items-start">
-            <Info size={20} className="mt-0.5 mr-2 flex-shrink-0" />
-            <div>
-              <p className="font-medium">Video Player Error:</p>
-              <p>{playerError}</p>
-              <p className="mt-2 text-sm">
-                Please try selecting a different server or check your internet connection.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Batch Download Section - only show when not in full player mode */}
-      {!isFullPlayer && episodeData.animeId && (
-        <div className="mb-6">
-          <BatchDownloadSection 
-            animeId={episodeData.animeId} 
-            animeTitle={episodeData.animeTitle} 
-          />
-        </div>
-      )}
-      
-      {/* Episode Navigation with enhanced styling */}
-      <div className="flex justify-between mb-8 gap-4">
-        <div className="flex-1">
-          {episodeData.prevEpisodeId ? (
-            <Link
-              to={`/watch/${episodeData.prevEpisodeId}`}
-              className="flex items-center justify-center md:justify-start w-full px-4 py-3 bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 rounded-lg hover:from-blue-50 hover:to-blue-100 dark:hover:from-blue-900/20 dark:hover:to-blue-800/20 transition-all dark:text-white shadow-sm"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              <div className="flex flex-col items-start">
-                <span className="text-xs text-gray-500 dark:text-gray-400">Previous</span>
-                <span className="font-medium">Episode {parseInt(episodeData.episodeNumber) - 1}</span>
+
+          {animeDetails && animeDetails.episodes && animeDetails.episodes.length > 0 && (
+            <div id="episode-list" className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-3">Semua Episode</h2>
+              <div className="max-h-60 overflow-y-auto pr-2 rounded-md custom-scrollbar">
+                <ul className="space-y-1.5">
+                  {animeDetails.episodes.map((ep, index) => (
+                    <li key={ep.id || ep.episodeId || index}>
+                      <Link
+                        to={`/watch/${ep.id || ep.episodeId}`}
+                        className={`block p-2.5 rounded-md text-sm transition-colors
+                                    ${(ep.id === episodeId || ep.episodeId === episodeId)
+                                    ? 'bg-blue-500 text-white font-semibold shadow'
+                                    : 'bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200 dark:hover:bg-gray-600/60 text-gray-700 dark:text-gray-300'}`}
+                      >
+                        {ep.title || ep.name || `Episode ${ep.episode_number || ep.number || (index + 1)}`}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </Link>
-          ) : (
-            <div className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-lg opacity-50 text-center text-gray-400 dark:text-gray-500">
-              <span>First Episode</span>
             </div>
           )}
-        </div>
-        
-        <div className="flex-1">
-          {episodeData.nextEpisodeId ? (
-            <Link
-              to={`/watch/${episodeData.nextEpisodeId}`}
-              className="flex items-center justify-center md:justify-end w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all text-white shadow-sm"
-            >
-              <div className="flex flex-col items-end">
-                <span className="text-xs text-blue-100">Next</span>
-                <span className="font-medium">Episode {parseInt(episodeData.episodeNumber) + 1}</span>
-              </div>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          ) : (
-            <div className="w-full px-4 py-3 bg-gray-100 dark:bg-gray-800 rounded-lg opacity-50 text-center text-gray-400 dark:text-gray-500">
-              <span>Latest Episode</span>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Debug information (hidden in production) */}
-      {import.meta.env.DEV && (
-        <div className="bg-gray-100 dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
-          <details>
-            <summary className="cursor-pointer font-medium">Debug Info</summary>
-            <div className="mt-2 overflow-auto max-h-96">
-              <pre className="text-xs">{JSON.stringify(debug, null, 2)}</pre>
-            </div>
-          </details>
-        </div>
-      )}
-      
-      {/* Comments section with enhanced styling */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-bold mb-4 dark:text-white flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-          Comments
-        </h2>
-        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-8 text-center">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 mx-auto text-gray-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">Comments feature coming soon!</p>
-          <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">Join the discussion about this episode</p>
         </div>
       </div>
     </div>
