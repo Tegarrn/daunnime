@@ -4,8 +4,7 @@ import { useParams, Link } from 'react-router-dom';
 import { getAnimeDetails } from '../services/api';
 import Loader from '../components/Loader';
 import BatchDownloadSection from '../components/BatchDownloadSection';
-import { PlayCircle, List, Tag, Calendar, Tv, Users, Star, Download, AlertTriangle } from 'lucide-react'; // ExternalLink dihapus jika tidak dipakai di sini
-// import {Helmet} from "react-helmet-async"; // Dihapus
+import { PlayCircle, List, Tag, Calendar, Tv, Users, Star, Download, AlertTriangle } from 'lucide-react';
 
 const AnimeDetail = () => {
   const { animeId } = useParams();
@@ -26,17 +25,18 @@ const AnimeDetail = () => {
       const response = await getAnimeDetails(animeId);
       let dataToSet = response.data || response;
 
+      // Untuk melihat struktur data yang diterima dari API (bisa dihapus setelah debug)
+      console.log("Fetched animeData:", dataToSet); 
+
       if (dataToSet && dataToSet.episode_list && !dataToSet.episodes) {
         dataToSet.episodes = dataToSet.episode_list;
       }
       if (dataToSet && dataToSet.episodes && !Array.isArray(dataToSet.episodes)) {
         console.warn("AnimeDetail: episodes data is not an array, attempting conversion if it's an object of episodes.", dataToSet.episodes);
-        // Logika konversi bisa disesuaikan di sini jika diperlukan
       } else if (dataToSet && !dataToSet.episodes) {
          dataToSet.episodes = [];
       }
       setAnimeData(dataToSet);
-       // Mengatur judul dokumen secara manual
        if (dataToSet && dataToSet.title) {
         document.title = `${dataToSet.title} - DaunNime`;
       } else {
@@ -83,7 +83,7 @@ const AnimeDetail = () => {
     poster,
     title,
     alternativeTitle,
-    synopsis,
+    synopsis, // Variabel yang menyebabkan error
     genres,
     status,
     type,
@@ -92,15 +92,17 @@ const AnimeDetail = () => {
     studio,
     releaseDate,
     episodes = [],
-  } = animeData;
+  } = animeData; // Tidak perlu || {} di sini jika sudah ada pengecekan !animeData di atas
 
-  const synopsisToShow = showFullSynopsis || !synopsis || synopsis.length <= 250
-    ? synopsis
-    : `${synopsis.substring(0, 250)}...`;
+  // PERBAIKAN: Pastikan synopsis adalah string sebelum digunakan
+  const synopsisString = typeof synopsis === 'string' ? synopsis : '';
+
+  const synopsisToShow = showFullSynopsis || !synopsisString || synopsisString.length <= 250
+    ? synopsisString
+    : `${synopsisString.substring(0, 250)}...`; // Baris 99 (atau sekitar sini)
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
-        {/* <Helmet> Dihapus </Helmet> */}
       <div className="bg-white dark:bg-gray-800 shadow-xl rounded-xl overflow-hidden">
         <div className="md:flex">
           <div className="md:flex-shrink-0">
@@ -128,13 +130,14 @@ const AnimeDetail = () => {
                 {status && <span className="px-3 py-1 bg-green-100 dark:bg-green-700 text-green-700 dark:text-green-200 text-xs font-semibold rounded-full">{status}</span>}
             </div>
             
-            {synopsis && (
+            {/* PERBAIKAN: Gunakan synopsisString untuk pengecekan dan tampilan */}
+            {synopsisString ? (
               <div className="mb-5">
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Sinopsis</h2>
                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
                   {synopsisToShow}
                 </p>
-                {synopsis.length > 250 && (
+                {synopsisString.length > 250 && (
                   <button
                     onClick={() => setShowFullSynopsis(!showFullSynopsis)}
                     className="text-blue-500 hover:underline text-sm mt-1"
@@ -142,6 +145,13 @@ const AnimeDetail = () => {
                     {showFullSynopsis ? 'Tampilkan Lebih Sedikit' : 'Baca Selengkapnya'}
                   </button>
                 )}
+              </div>
+            ) : (
+              <div className="mb-5">
+                 <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Sinopsis</h2>
+                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
+                   Sinopsis tidak tersedia untuk anime ini.
+                 </p>
               </div>
             )}
 
@@ -204,12 +214,13 @@ const AnimeDetail = () => {
             </div>
           </div>
         )}
-        {episodes && episodes.length === 0 && (
+        {(!episodes || episodes.length === 0) && ( // Penyesuaian kondisi
             <div className="px-6 py-6 border-t border-gray-200 dark:border-gray-700">
                 <p className="text-gray-600 dark:text-gray-400">Belum ada episode yang tersedia untuk anime ini.</p>
             </div>
         )}
-        <BatchDownloadSection animeId={animeId} animeTitle={title} />
+        {/* Pastikan batchId yang valid dikirim ke BatchDownloadSection */}
+        {animeId && <BatchDownloadSection batchId={animeId} />} 
       </div>
     </div>
   );

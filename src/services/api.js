@@ -1,5 +1,5 @@
 // src/services/api.js
-const API_URL = import.meta.env.VITE_API_URL || 'https://animek-api-rho.vercel.app';
+const API_URL = import.meta.env.VITE_API_URL || 'https://animek-api-ten.vercel.app';
 
 // Helper function for API requests with better error handling
 const fetchWithErrorHandling = async (url, options = {}) => {
