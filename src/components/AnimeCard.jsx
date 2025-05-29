@@ -11,15 +11,36 @@ const AnimeCard = ({ anime, isEpisode = false }) => {
   const cardRef = useRef(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
-  // More flexible data structure handling
-  const id = anime.animeId || anime.id || anime.slug || 
-             (anime.href && anime.href.replace(/.*\/([^/]+)\/?$/, '$1')) || 'unknown';
-  const episodeId = anime.episodeId || null; // Add this line to handle episode IDs
+  // PERBAIKAN: Lebih hati-hati dalam mengekstrak ID
+  let id;
+  if (anime.animeId) {
+    id = anime.animeId;
+  } else if (anime.id) {
+    id = anime.id;
+  } else if (anime.slug) {
+    id = anime.slug;
+  } else if (anime.href) {
+    // Perbaiki regex untuk ekstraksi ID dari href
+    // Contoh href: "/anime/kanpekiseijo-sub-indo/" atau "https://domain.com/anime/kanpekiseijo-sub-indo/"
+    const match = anime.href.match(/\/anime\/([^\/]+)\/?$/);
+    id = match ? match[1] : anime.href.replace(/.*\/([^/]+)\/?$/, '$1');
+  } else {
+    id = 'unknown';
+  }
+  
+  // Debug log untuk melihat ID yang diekstrak
+  console.log('AnimeCard ID extraction:', {
+    original: anime,
+    extractedId: id,
+    href: anime.href
+  });
+
+  const episodeId = anime.episodeId || null;
   const title = anime.title || anime.name || 'No Title';
   const thumbnail = anime.image || anime.thumbnail || anime.poster || anime.img || '/placeholder-anime.jpg';
   const episodeNumber = anime.episodeNumber || anime.episode || null;
   const type = anime.type || anime.category || 'TV';
-  const rating = anime.rating || Math.floor(Math.random() * 2) + 8; // Simulate a rating between 8-10 if not provided
+  const rating = anime.rating || Math.floor(Math.random() * 2) + 8;
 
   // Determine correct link based on the card type
   const linkTo = isEpisode && episodeId 

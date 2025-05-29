@@ -1,152 +1,178 @@
-// src/services/api.js
-const API_URL = import.meta.env.VITE_API_URL || 'https://animek-api-ten.vercel.app';
+// src/services/api.js - Using CORS Proxy to bypass 403
+const CORS_PROXIES = [
+  'https://cors-anywhere.herokuapp.com/',
+  'https://api.allorigins.win/raw?url=',
+  'https://corsproxy.io/?',
+];
 
-// Helper function for API requests with better error handling
-const fetchWithErrorHandling = async (url, options = {}) => {
-  console.log(`📡 Fetching: ${url}`);
+const ORIGINAL_API = 'https://animek-api-ten.vercel.app';
+let currentProxyIndex = 0;
+
+const getProxiedUrl = (endpoint) => {
+  const fullUrl = `${ORIGINAL_API}${endpoint}`;
+  const proxy = CORS_PROXIES[currentProxyIndex];
   
-  // Gabungkan options default dengan options yang mungkin di-pass
+  if (proxy.includes('allorigins')) {
+    return `${proxy}${encodeURIComponent(fullUrl)}`;
+  } else {
+    return `${proxy}${fullUrl}`;
+  }
+};
+
+const switchProxy = () => {
+  currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
+  console.log(`🔄 Switching to proxy: ${CORS_PROXIES[currentProxyIndex]}`);
+};
+
+// Direct fetch without proxy (fallback)
+const directFetch = async (endpoint, options = {}) => {
+  const url = `${ORIGINAL_API}${endpoint}`;
+  console.log(`📡 Direct fetch: ${url}`);
+  
   const fetchOptions = {
-    ...options, // options yang mungkin di-pass dari fetchWithRetry (seperti method, body, dll.)
+    ...options,
+    method: 'GET',
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', // User-Agent umum
-      // Anda bisa menambahkan header lain di sini jika diperlukan, misal:
-      // 'Accept': 'application/json',
-      // 'Content-Type': 'application/json', // Hanya jika Anda mengirim body JSON (misalnya untuk POST)
-      ...(options.headers || {}), // Gabungkan dengan header yang mungkin sudah ada di options
+      'Accept': 'application/json',
+      ...(options.headers || {}),
     },
-    // mode: 'cors', // uncomment jika ada masalah CORS, tapi 403 biasanya bukan CORS murni
+    mode: 'cors',
   };
 
-  // Hapus Content-Type jika tidak ada body (penting untuk GET request)
-  if (!fetchOptions.body && fetchOptions.headers['Content-Type'] === 'application/json') {
-    delete fetchOptions.headers['Content-Type'];
+  const response = await fetch(url, fetchOptions);
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
-
-
-  try {
-    const response = await fetch(url, fetchOptions); // Menggunakan fetchOptions yang sudah dimodifikasi
-    console.log(`📥 Response status: ${response.status} for ${url}`);
-    console.log(`📄 Response headers for ${url}:`, Object.fromEntries(response.headers.entries()));
-
-
-    if (!response.ok) {
-      let errorDetail = '';
-      try {
-        // Coba baca respons sebagai JSON dulu jika gagal
-        const errorData = await response.json();
-        errorDetail = errorData.message || errorData.error || JSON.stringify(errorData);
-      } catch (e) {
-        // Jika gagal baca sebagai JSON (mungkin bukan JSON atau kosong), baca sebagai teks
-        try {
-            errorDetail = await response.text();
-        } catch (textError){
-            errorDetail = response.statusText; // Fallback ke statusText
-        }
-      }
-      // Log detail error dari server jika ada
-      console.error(`❌ Server error detail for ${url} (${response.status}):`, errorDetail);
-      throw new Error(`API Error (${response.status}): ${errorDetail || response.statusText}`);
-    }
-
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      try {
-        const data = await response.json();
-        console.log(`✅ Success (JSON) for ${url}`, data);
-        return data;
-      } catch (error) {
-        console.error(`❌ JSON parsing error for ${url}:`, error);
-        throw new Error(`Failed to parse JSON response: ${error.message}`);
-      }
-    } else {
-      const text = await response.text();
-      console.log(`✅ Success (Non-JSON text) for ${url}:`, text.substring(0, 100) + "..."); // Log sebagian kecil dari teks
-      // Jika respons diharapkan JSON tapi tidak, ini bisa jadi masalah.
-      // Namun, jika API terkadang mengembalikan teks (misal, HTML error page dari server proxy), ini menanganinya.
-      // Untuk kasus umum API Anda, Anda mungkin selalu mengharapkan JSON.
-      // Jika 'text' seharusnya JSON, coba parse di sini juga.
-      if (text.trim().startsWith('{') || text.trim().startsWith('[')) {
-        try {
-          const data = JSON.parse(text);
-          console.log(`✅ Parsed non-JSON text response as JSON for ${url}`, data);
-          return data;
-        } catch (error) {
-          console.warn(`⚠️ Non-JSON text response for ${url} looks like JSON but couldn't be parsed. Returning text.`);
-        }
-      }
-      // Jika API Anda seharusnya selalu JSON, mengembalikan teks bisa jadi error di sisi client.
-      // Pertimbangkan untuk throw error jika contentType bukan JSON dan Anda selalu mengharapkannya.
-      // throw new Error(`Received non-JSON response from server: ${contentType}`);
-      return { success: true, text_response: text }; // Atau sesuaikan bagaimana Anda ingin menangani respons non-JSON
-    }
-  } catch (error) {
-    // Pastikan error yang di-throw dari blok try di atas juga ditangkap di sini
-    if (!error.url) { // Jika error berasal dari fetch atau parsing, tambahkan konteks
-        console.error(`❌ Network or Parsing Error for ${url}:`, error);
-        const enhancedError = new Error(`Request failed for ${url.split('/').slice(-2).join('/')}: ${error.message}`);
-        enhancedError.originalError = error;
-        enhancedError.url = url;
-        throw enhancedError;
-    }
-    throw error; // Re-throw error yang sudah memiliki konteks
-  }
+  
+  return response.json();
 };
 
-// Retry mechanism for API requests (dari file Anda)
-const fetchWithRetry = async (url, options = {}, retries = 2, delay = 1000) => {
+// Proxied fetch to bypass CORS and 403
+const proxiedFetch = async (endpoint, options = {}) => {
+  const url = getProxiedUrl(endpoint);
+  console.log(`📡 Proxied fetch: ${url}`);
+  
+  const fetchOptions = {
+    ...options,
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      ...(options.headers || {}),
+    },
+  };
+
+  const response = await fetch(url, fetchOptions);
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
+// Try multiple methods to fetch data
+const fetchWithFallback = async (endpoint, options = {}) => {
+  const methods = [
+    () => directFetch(endpoint, options),
+    () => proxiedFetch(endpoint, options),
+  ];
+  
+  let lastError;
+  
+  for (const method of methods) {
+    try {
+      const result = await method();
+      console.log(`✅ Success fetching: ${endpoint}`);
+      return result;
+    } catch (error) {
+      console.log(`❌ Method failed: ${error.message}`);
+      lastError = error;
+      
+      // If using proxy and it fails, try next proxy
+      if (method === proxiedFetch) {
+        switchProxy();
+      }
+    }
+  }
+  
+  throw new Error(`All methods failed for ${endpoint}: ${lastError.message}`);
+};
+
+// Retry mechanism
+const fetchWithRetry = async (endpoint, options = {}, retries = 2, delay = 1000) => {
   try {
-    return await fetchWithErrorHandling(url, options);
+    return await fetchWithFallback(endpoint, options);
   } catch (error) {
-    // Hanya retry untuk error jaringan atau server tertentu, bukan 403 jika itu final.
-    // Untuk error 403, retry mungkin tidak akan mengubah hasil jika disebabkan oleh header/izin.
-    // Namun, jika 403 bersifat sementara (misal, WAF yang terlalu sensitif), retry bisa saja membantu.
-    // Untuk sekarang, logika retry standar tetap dipertahankan.
     if (retries <= 0) {
-      throw error;
+      throw new Error(`Request failed for ${endpoint}: ${error.message}`);
     }
-    console.log(`⏱️ Retrying request to ${url} in ${delay}ms... (${retries} retries left). Error: ${error.message}`);
+    
+    console.log(`⏱️ Retrying ${endpoint} in ${delay}ms... (${retries} retries left)`);
     await new Promise(resolve => setTimeout(resolve, delay));
-    return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+    return fetchWithRetry(endpoint, options, retries - 1, delay * 1.5);
   }
 };
 
-// --- Implementasi Fungsi API Otakudesu (tetap sama seperti sebelumnya) ---
+// Rate limiting
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 1000;
+
+const rateLimitedFetch = async (endpoint, options = {}) => {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  
+  if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+    const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
+    console.log(`⏱️ Rate limiting: waiting ${waitTime}ms`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  lastRequestTime = Date.now();
+  return fetchWithRetry(endpoint, options);
+};
+
+// --- API Functions ---
 
 export const getAnimeList = () =>
-  fetchWithRetry(`${API_URL}/otakudesu/home`);
+  rateLimitedFetch('/otakudesu/home');
 
 export const getAnimeDetails = (animeId) => {
   if (!animeId) return Promise.reject(new Error('Anime ID is required'));
-  return fetchWithRetry(`${API_URL}/otakudesu/anime/${animeId}`);
+  
+  const cleanAnimeId = animeId.toString().trim().toLowerCase();
+  console.log(`🎯 Getting anime details for ID: "${cleanAnimeId}"`);
+  
+  return rateLimitedFetch(`/otakudesu/anime/${cleanAnimeId}`);
 };
 
 export const searchAnime = (query, page) => {
   if (!query) return Promise.reject(new Error('Search query is required'));
-  let searchUrl = `${API_URL}/otakudesu/search?q=${encodeURIComponent(query)}`;
+  let searchEndpoint = `/otakudesu/search?q=${encodeURIComponent(query)}`;
   if (page) {
-    searchUrl += `&page=${page}`;
+    searchEndpoint += `&page=${page}`;
   }
-  return fetchWithRetry(searchUrl);
+  return rateLimitedFetch(searchEndpoint);
 };
 
 export const getEpisodeDetails = (episodeId) => {
   if (!episodeId) return Promise.reject(new Error('Episode ID is required'));
-  return fetchWithRetry(`${API_URL}/otakudesu/episode/${episodeId}`);
+  return rateLimitedFetch(`/otakudesu/episode/${episodeId}`);
 };
 
 export const getStreamingServerLink = (serverId) => {
   if (!serverId) return Promise.reject(new Error('Server ID is required'));
-  return fetchWithRetry(`${API_URL}/otakudesu/server/${serverId}`);
+  return rateLimitedFetch(`/otakudesu/server/${serverId}`);
 };
 
 export const getBatchDownload = async (batchId) => {
   if (!batchId) throw new Error('Batch ID is required');
   try {
-    const batchResponse = await fetchWithRetry(`${API_URL}/otakudesu/batch/${batchId}`);
+    const batchResponse = await rateLimitedFetch(`/otakudesu/batch/${batchId}`);
     return batchResponse.data ? batchResponse : { data: batchResponse };
   } catch (error) {
-    console.warn(`Primary batch endpoint /otakudesu/batch/${batchId} failed. Trying fallback...`);
+    console.warn(`Primary batch endpoint failed. Trying fallback...`);
     try {
       const animeDetailsResponse = await getAnimeDetails(batchId);
       if (animeDetailsResponse && animeDetailsResponse.data) {
@@ -169,26 +195,26 @@ export const getBatchDownload = async (batchId) => {
 };
 
 export const getGenres = () =>
-  fetchWithRetry(`${API_URL}/otakudesu/genres`);
+  rateLimitedFetch('/otakudesu/genres');
 
 export const getAnimeByGenre = (genreId, page = 1) => {
   if (!genreId) return Promise.reject(new Error('Genre ID is required'));
-  return fetchWithRetry(`${API_URL}/otakudesu/genres/${genreId}?page=${page}`);
+  return rateLimitedFetch(`/otakudesu/genres/${genreId}?page=${page}`);
 };
 
 export const getReleaseSchedule = () =>
-  fetchWithRetry(`${API_URL}/otakudesu/schedule`);
+  rateLimitedFetch('/otakudesu/schedule');
 
 export const getOngoingAnime = (page = 1) =>
-  fetchWithRetry(`${API_URL}/otakudesu/ongoing?page=${page}`);
+  rateLimitedFetch(`/otakudesu/ongoing?page=${page}`);
 
 export const getCompletedAnime = (page = 1) =>
-  fetchWithRetry(`${API_URL}/otakudesu/completed?page=${page}`);
+  rateLimitedFetch(`/otakudesu/completed?page=${page}`);
 
 export const getAllAnimeList = () =>
-  fetchWithRetry(`${API_URL}/otakudesu/anime`);
+  rateLimitedFetch('/otakudesu/anime');
 
-// --- Alias untuk kompatibilitas dengan Home.jsx yang ada ---
+// --- Aliases for compatibility ---
 export const getHomeData = getAnimeList;
 export const getRecentAnime = getOngoingAnime;
 export const getPopularAnime = getCompletedAnime;

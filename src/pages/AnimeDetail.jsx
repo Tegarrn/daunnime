@@ -19,14 +19,19 @@ const AnimeDetail = () => {
         setLoading(false);
         return;
     }
+    
     setLoading(true);
     setError(null);
+    
+    // Debug log untuk melihat ID yang diterima dari URL
+    console.log('AnimeDetail: Fetching data for animeId:', animeId);
+    
     try {
       const response = await getAnimeDetails(animeId);
       let dataToSet = response.data || response;
 
-      // Untuk melihat struktur data yang diterima dari API (bisa dihapus setelah debug)
-      console.log("Fetched animeData:", dataToSet); 
+      // Debug log untuk melihat struktur response
+      console.log("AnimeDetail: Fetched animeData from API:", dataToSet); 
 
       if (dataToSet && dataToSet.episode_list && !dataToSet.episodes) {
         dataToSet.episodes = dataToSet.episode_list;
@@ -36,15 +41,33 @@ const AnimeDetail = () => {
       } else if (dataToSet && !dataToSet.episodes) {
          dataToSet.episodes = [];
       }
+      
       setAnimeData(dataToSet);
-       if (dataToSet && dataToSet.title) {
+      
+      if (dataToSet && dataToSet.title) {
         document.title = `${dataToSet.title} - DaunNime`;
       } else {
         document.title = "Detail Anime - DaunNime";
       }
     } catch (err) {
-      console.error("Failed to fetch anime details:", err);
-      setError(err.message || 'Gagal memuat detail anime.');
+      console.error("AnimeDetail: Failed to fetch anime details:", err);
+      
+      // Lebih detail error handling
+      let errorMessage = 'Gagal memuat detail anime.';
+      
+      if (err.message.includes('403')) {
+        errorMessage = `Akses ditolak untuk anime "${animeId}". API mungkin memblokir request atau ID anime tidak valid.`;
+      } else if (err.message.includes('404')) {
+        errorMessage = `Anime dengan ID "${animeId}" tidak ditemukan.`;
+      } else if (err.message.includes('500')) {
+        errorMessage = 'Server mengalami masalah. Silakan coba lagi nanti.';
+      } else if (err.message.includes('Failed to fetch') || err.message.includes('Network')) {
+        errorMessage = 'Masalah koneksi internet. Periksa koneksi Anda.';
+      } else {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
       document.title = "Error Detail Anime - DaunNime";
     } finally {
       setLoading(false);
@@ -63,14 +86,23 @@ const AnimeDetail = () => {
     return (
         <div className="container mx-auto px-4 py-8 text-center">
             <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
-            <p className="text-red-500 text-xl mb-3">Gagal memuat detail anime.</p>
+            <p className="text-red-500 text-xl mb-3">Gagal memuat detail anime</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-2"><strong>ID:</strong> {animeId}</p>
             <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
-            <button
-            onClick={fetchAnimeData}
-            className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-            >
-            Coba Lagi
-            </button>
+            <div className="space-x-4">
+              <button
+                onClick={fetchAnimeData}
+                className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+              >
+                Coba Lagi
+              </button>
+              <Link
+                to="/"
+                className="px-6 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors inline-block"
+              >
+                Kembali ke Home
+              </Link>
+            </div>
         </div>
     );
   }
@@ -83,7 +115,7 @@ const AnimeDetail = () => {
     poster,
     title,
     alternativeTitle,
-    synopsis, // Variabel yang menyebabkan error
+    synopsis,
     genres,
     status,
     type,
@@ -92,14 +124,20 @@ const AnimeDetail = () => {
     studio,
     releaseDate,
     episodes = [],
-  } = animeData; // Tidak perlu || {} di sini jika sudah ada pengecekan !animeData di atas
+  } = animeData;
 
-  // PERBAIKAN: Pastikan synopsis adalah string sebelum digunakan
-  const synopsisString = typeof synopsis === 'string' ? synopsis : '';
+  // Process synopsis
+  let fullSynopsisText = '';
+  if (synopsis && typeof synopsis === 'object' && Array.isArray(synopsis.paragraphs) && synopsis.paragraphs.length > 0) {
+    fullSynopsisText = synopsis.paragraphs.join('\n\n');
+  } else if (typeof synopsis === 'string' && synopsis) { 
+    fullSynopsisText = synopsis;
+    console.warn("Warning: Synopsis from API was a string, but expected an object { paragraphs: [] }. Using string directly.");
+  }
 
-  const synopsisToShow = showFullSynopsis || !synopsisString || synopsisString.length <= 250
-    ? synopsisString
-    : `${synopsisString.substring(0, 250)}...`; // Baris 99 (atau sekitar sini)
+  const synopsisToShow = showFullSynopsis || !fullSynopsisText || fullSynopsisText.length <= 250
+    ? fullSynopsisText
+    : `${fullSynopsisText.substring(0, 250)}...`;
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
@@ -130,14 +168,13 @@ const AnimeDetail = () => {
                 {status && <span className="px-3 py-1 bg-green-100 dark:bg-green-700 text-green-700 dark:text-green-200 text-xs font-semibold rounded-full">{status}</span>}
             </div>
             
-            {/* PERBAIKAN: Gunakan synopsisString untuk pengecekan dan tampilan */}
-            {synopsisString ? (
+            {fullSynopsisText ? (
               <div className="mb-5">
                 <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Sinopsis</h2>
-                <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
+                <div className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm whitespace-pre-line">
                   {synopsisToShow}
-                </p>
-                {synopsisString.length > 250 && (
+                </div>
+                {fullSynopsisText.length > 250 && (
                   <button
                     onClick={() => setShowFullSynopsis(!showFullSynopsis)}
                     className="text-blue-500 hover:underline text-sm mt-1"
@@ -156,7 +193,7 @@ const AnimeDetail = () => {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4 text-sm mb-5">
-                {totalEpisodes && <p className="flex items-center"><List size={16} className="mr-2 text-gray-500"/><strong>Total Episode:</strong>&nbsp; {totalEpisodes}</p>}
+                {totalEpisodes != null && <p className="flex items-center"><List size={16} className="mr-2 text-gray-500"/><strong>Total Episode:</strong>&nbsp; {totalEpisodes}</p>}
                 {releaseDate && <p className="flex items-center"><Calendar size={16} className="mr-2 text-gray-500"/><strong>Tanggal Rilis:</strong>&nbsp; {releaseDate}</p>}
                 {studio && <p className="flex items-center"><Users size={16} className="mr-2 text-gray-500"/><strong>Studio:</strong>&nbsp; {typeof studio === 'object' ? studio.name : studio}</p>}
             </div>
@@ -214,13 +251,12 @@ const AnimeDetail = () => {
             </div>
           </div>
         )}
-        {(!episodes || episodes.length === 0) && ( // Penyesuaian kondisi
+        {(!episodes || episodes.length === 0) && (
             <div className="px-6 py-6 border-t border-gray-200 dark:border-gray-700">
                 <p className="text-gray-600 dark:text-gray-400">Belum ada episode yang tersedia untuk anime ini.</p>
             </div>
         )}
-        {/* Pastikan batchId yang valid dikirim ke BatchDownloadSection */}
-        {animeId && <BatchDownloadSection batchId={animeId} />} 
+        {animeId && <BatchDownloadSection animeId={animeId} animeTitle={title} />} 
       </div>
     </div>
   );
