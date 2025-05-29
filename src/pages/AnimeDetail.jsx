@@ -4,7 +4,7 @@ import { useParams, Link } from 'react-router-dom';
 import { getAnimeDetails } from '../services/api';
 import Loader from '../components/Loader';
 import BatchDownloadSection from '../components/BatchDownloadSection';
-import { PlayCircle, List, Tag, Calendar, Tv, Users, Star, Download, AlertTriangle } from 'lucide-react';
+import { PlayCircle, List, Tag, Calendar, Tv, Users, Star, Download, AlertTriangle, Film, Clock, Info, FileText, RadioTower, Building } from 'lucide-react';
 
 const AnimeDetail = () => {
   const { animeId } = useParams();
@@ -23,21 +23,21 @@ const AnimeDetail = () => {
     setLoading(true);
     setError(null);
     
-    // Debug log untuk melihat ID yang diterima dari URL
     console.log('AnimeDetail: Fetching data for animeId:', animeId);
     
     try {
-      const response = await getAnimeDetails(animeId);
-      let dataToSet = response.data || response;
+      // getAnimeDetails now returns the core data object directly
+      const dataToSet = await getAnimeDetails(animeId);
 
-      // Debug log untuk melihat struktur response
-      console.log("AnimeDetail: Fetched animeData from API:", dataToSet); 
+      console.log("AnimeDetail: Processed animeData from API service:", dataToSet); 
 
       if (dataToSet && dataToSet.episode_list && !dataToSet.episodes) {
         dataToSet.episodes = dataToSet.episode_list;
       }
-      if (dataToSet && dataToSet.episodes && !Array.isArray(dataToSet.episodes)) {
-        console.warn("AnimeDetail: episodes data is not an array, attempting conversion if it's an object of episodes.", dataToSet.episodes);
+      // Ensure episodes is an array
+      if (dataToSet && !Array.isArray(dataToSet.episodes)) {
+        console.warn("AnimeDetail: episodes data is not an array or undefined, defaulting to empty array.", dataToSet.episodes);
+        dataToSet.episodes = [];
       } else if (dataToSet && !dataToSet.episodes) {
          dataToSet.episodes = [];
       }
@@ -52,7 +52,6 @@ const AnimeDetail = () => {
     } catch (err) {
       console.error("AnimeDetail: Failed to fetch anime details:", err);
       
-      // Lebih detail error handling
       let errorMessage = 'Gagal memuat detail anime.';
       
       if (err.message.includes('403')) {
@@ -108,127 +107,186 @@ const AnimeDetail = () => {
   }
 
   if (!animeData) {
-    return <div className="container mx-auto px-4 py-8 text-center text-gray-500">Tidak ada data anime yang ditemukan.</div>;
+    // This might happen if API returns null/undefined after unwrapping
+    return <div className="container mx-auto px-4 py-8 text-center text-gray-500">Tidak ada data anime yang ditemukan atau format respons tidak valid.</div>;
   }
 
   const {
     poster,
     title,
-    alternativeTitle,
+    alternativeTitle, 
+    japaneseTitle, 
+    englishTitle, 
+    synonyms, 
     synopsis,
-    genres,
+    genres = [],
     status,
     type,
     totalEpisodes,
     score,
     studio,
-    releaseDate,
-    episodes = [],
+    releaseDate, 
+    source, 
+    duration, 
+    season, 
+    producers, 
+    episodes = [], // ensure episodes is initialized
   } = animeData;
 
-  // Process synopsis
   let fullSynopsisText = '';
   if (synopsis && typeof synopsis === 'object' && Array.isArray(synopsis.paragraphs) && synopsis.paragraphs.length > 0) {
     fullSynopsisText = synopsis.paragraphs.join('\n\n');
   } else if (typeof synopsis === 'string' && synopsis) { 
     fullSynopsisText = synopsis;
-    console.warn("Warning: Synopsis from API was a string, but expected an object { paragraphs: [] }. Using string directly.");
   }
 
   const synopsisToShow = showFullSynopsis || !fullSynopsisText || fullSynopsisText.length <= 250
     ? fullSynopsisText
     : `${fullSynopsisText.substring(0, 250)}...`;
 
+  const DetailItem = ({ icon: Icon, label, value, isHtml = false, lineClamp = true }) => {
+    if (value === null || typeof value === 'undefined' || value === '') return null;
+    return (
+      <div className="flex text-sm py-1">
+        <div className="w-2/5 sm:w-1/3 font-semibold text-gray-600 dark:text-gray-400 flex items-center shrink-0">
+          {Icon && <Icon size={14} className="mr-2 opacity-80" />}
+          {label}
+        </div>
+        {isHtml ? (
+          <div className={`w-3/5 sm:w-2/3 text-gray-800 dark:text-gray-200 ${lineClamp ? 'line-clamp-2' : ''}`} dangerouslySetInnerHTML={{ __html: `: ${value}` }} />
+        ) : (
+          <div className={`w-3/5 sm:w-2/3 text-gray-800 dark:text-gray-200 ${lineClamp ? 'line-clamp-2' : ''}`}>: {value}</div>
+        )}
+      </div>
+    );
+  };
+
+
   return (
     <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
       <div className="bg-white dark:bg-gray-800 shadow-xl rounded-xl overflow-hidden">
-        <div className="md:flex">
-          <div className="md:flex-shrink-0">
-            <img
-              className="h-auto w-full object-cover md:w-72"
-              src={poster || '/placeholder-anime.jpg'}
-              alt={`Poster ${title}`}
-              onError={(e) => { e.target.onerror = null; e.target.src='/placeholder-anime.jpg'; }}
-            />
-          </div>
-          <div className="p-6 sm:p-8 flex-grow">
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-1">
-              {title || 'Judul Tidak Tersedia'}
-            </h1>
-            {alternativeTitle && <p className="text-md text-gray-600 dark:text-gray-400 mb-3">{alternativeTitle}</p>}
+        <div className="p-6 sm:p-8 md:flex">
+            <div className="md:flex-shrink-0 md:w-72 text-center md:text-left mb-4 md:mb-0">
+                <img
+                className="h-auto w-full max-w-xs mx-auto md:mx-0 md:w-full object-cover rounded-lg shadow-md"
+                src={poster || '/placeholder-anime.jpg'}
+                alt={`Poster ${title}`}
+                onError={(e) => { e.target.onerror = null; e.target.src='/placeholder-anime.jpg'; }}
+                />
+            </div>
+            <div className="md:pl-8 flex-grow">
+                <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-1">
+                {title || 'Judul Tidak Tersedia'}
+                </h1>
+                {(englishTitle || alternativeTitle) && <p className="text-md text-gray-600 dark:text-gray-400 mb-3">{englishTitle || alternativeTitle}</p>}
 
-            <div className="flex items-center space-x-4 mb-4">
-                {score && (
-                    <div className="flex items-center text-yellow-500">
-                        <Star size={20} className="mr-1" />
-                        <span className="font-semibold text-lg">{typeof score === 'number' ? score.toFixed(1) : score}</span>
+                <div className="flex items-center space-x-4 mb-4">
+                    {score && (
+                        <div className="flex items-center text-yellow-500">
+                            <Star size={20} className="mr-1" />
+                            <span className="font-semibold text-lg">
+                                {typeof score === 'object' ? (score.value || score.score || 'N/A') : (typeof score === 'number' ? score.toFixed(1) : score)}
+                                {typeof score === 'object' && score.users && <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">({score.users} users)</span>}
+                            </span>
+                        </div>
+                    )}
+                    {type && <span className="px-3 py-1 bg-blue-100 dark:bg-blue-700 text-blue-700 dark:text-blue-200 text-xs font-semibold rounded-full">{type}</span>}
+                    {status && <span className="px-3 py-1 bg-green-100 dark:bg-green-700 text-green-700 dark:text-green-200 text-xs font-semibold rounded-full">{status}</span>}
+                </div>
+                
+                <div className="flex flex-wrap gap-3 mb-6">
+                    {episodes && episodes.length > 0 && (episodes[0]?.id || episodes[0]?.episodeId) && (
+                    <Link
+                        to={`/watch/${episodes[0].id || episodes[0].episodeId}`}
+                        className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-lg shadow-md transition-transform transform hover:scale-105"
+                    >
+                        <PlayCircle size={18} className="mr-2" /> Nonton Episode Pertama
+                    </Link>
+                    )}
+                    <Link
+                        to={`/batch/${animeId}`}
+                        className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg shadow-md transition-transform transform hover:scale-105"
+                    >
+                        <Download size={18} className="mr-2" /> Download Batch
+                    </Link>
+                </div>
+
+                {fullSynopsisText ? (
+                <div className="mb-5">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2 flex items-center">
+                        <FileText size={20} className="mr-2 opacity-80" /> Sinopsis
+                    </h2>
+                    <div className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm whitespace-pre-line prose prose-sm dark:prose-invert max-w-none">
+                    {synopsisToShow}
                     </div>
-                )}
-                {type && <span className="px-3 py-1 bg-blue-100 dark:bg-blue-700 text-blue-700 dark:text-blue-200 text-xs font-semibold rounded-full">{type}</span>}
-                {status && <span className="px-3 py-1 bg-green-100 dark:bg-green-700 text-green-700 dark:text-green-200 text-xs font-semibold rounded-full">{status}</span>}
-            </div>
-            
-            {fullSynopsisText ? (
-              <div className="mb-5">
-                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Sinopsis</h2>
-                <div className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm whitespace-pre-line">
-                  {synopsisToShow}
+                    {fullSynopsisText.length > 250 && (
+                    <button
+                        onClick={() => setShowFullSynopsis(!showFullSynopsis)}
+                        className="text-blue-500 hover:underline text-sm mt-1"
+                    >
+                        {showFullSynopsis ? 'Tampilkan Lebih Sedikit' : 'Baca Selengkapnya'}
+                    </button>
+                    )}
                 </div>
-                {fullSynopsisText.length > 250 && (
-                  <button
-                    onClick={() => setShowFullSynopsis(!showFullSynopsis)}
-                    className="text-blue-500 hover:underline text-sm mt-1"
-                  >
-                    {showFullSynopsis ? 'Tampilkan Lebih Sedikit' : 'Baca Selengkapnya'}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="mb-5">
-                 <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Sinopsis</h2>
-                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
-                   Sinopsis tidak tersedia untuk anime ini.
-                 </p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-4 text-sm mb-5">
-                {totalEpisodes != null && <p className="flex items-center"><List size={16} className="mr-2 text-gray-500"/><strong>Total Episode:</strong>&nbsp; {totalEpisodes}</p>}
-                {releaseDate && <p className="flex items-center"><Calendar size={16} className="mr-2 text-gray-500"/><strong>Tanggal Rilis:</strong>&nbsp; {releaseDate}</p>}
-                {studio && <p className="flex items-center"><Users size={16} className="mr-2 text-gray-500"/><strong>Studio:</strong>&nbsp; {typeof studio === 'object' ? studio.name : studio}</p>}
-            </div>
-
-            {genres && genres.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-md font-semibold text-gray-700 dark:text-gray-200 mb-2 flex items-center">
-                    <Tag size={16} className="mr-2 text-gray-500"/> Genre:
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {genres.map((genre, index) => (
-                    <span key={index} className="px-2.5 py-1 text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-full">
-                      {typeof genre === 'object' ? genre.name : genre}
-                    </span>
-                  ))}
+                ) : (
+                <div className="mb-5">
+                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2 flex items-center">
+                        <FileText size={20} className="mr-2 opacity-80" /> Sinopsis
+                    </h2>
+                    <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
+                    Sinopsis tidak tersedia untuk anime ini.
+                    </p>
                 </div>
-              </div>
-            )}
-
-            {episodes && episodes.length > 0 && episodes[0] && (episodes[0].id || episodes[0].episodeId) && (
-              <Link
-                to={`/watch/${episodes[0].id || episodes[0].episodeId}`}
-                className="inline-flex items-center justify-center px-6 py-3 mb-4 mr-2 text-base font-medium text-white bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 rounded-lg shadow-md transition-transform transform hover:scale-105"
-              >
-                <PlayCircle size={20} className="mr-2" /> Nonton Episode Pertama
-              </Link>
-            )}
-             <Link
-                to={`/batch/${animeId}`}
-                className="inline-flex items-center justify-center px-6 py-3 mb-4 text-base font-medium text-gray-700 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg shadow-md transition-transform transform hover:scale-105"
-              >
-                <Download size={20} className="mr-2" /> Download Batch
-            </Link>
-          </div>
+                )}
+            </div>
         </div>
+        
+        <div className="p-6 sm:p-8 border-t border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4 flex items-center">
+                <Info size={20} className="mr-2 opacity-80" /> Detail Informasi
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-0.5"> {/* Reduced gap-y */}
+                <div>
+                    <DetailItem icon={FileText} label="Judul Jepang" value={japaneseTitle} />
+                    <DetailItem icon={FileText} label="Judul Inggris" value={englishTitle || alternativeTitle} />
+                    <DetailItem icon={RadioTower} label="Status" value={status} />
+                    <DetailItem icon={Film} label="Tipe" value={type} />
+                    <DetailItem icon={List} label="Total Episode" value={totalEpisodes} />
+                     <DetailItem icon={Building} label="Produser" value={producers} />
+                </div>
+                <div>
+                    <DetailItem icon={FileText} label="Sinonim" value={synonyms} />
+                    <DetailItem icon={Tag} label="Sumber" value={source} />
+                    <DetailItem icon={Clock} label="Durasi" value={duration} />
+                    <DetailItem icon={Users} label="Studio" value={studio && typeof studio === 'object' ? studio.name : studio} />
+                    <DetailItem icon={Calendar} label="Musim" value={season} />
+                    <DetailItem icon={Calendar} label="Tayang" value={releaseDate} />
+                </div>
+            </div>
+            {genres && genres.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                     <div className="flex text-sm py-1">
+                        <div className="w-2/5 sm:w-1/3 font-semibold text-gray-600 dark:text-gray-400 flex items-center shrink-0">
+                            <Tag size={14} className="mr-2 opacity-80" />
+                            Genre
+                        </div>
+                        <div className="w-3/5 sm:w-2/3 text-gray-800 dark:text-gray-200 flex flex-wrap gap-2 items-center">
+                            <span className="mr-1">:</span>
+                            {genres.map((genre, index) => (
+                                <Link 
+                                    to={`/genre/${typeof genre === 'object' ? genre.id || genre.slug || genre.name : genre}`}
+                                    key={index} 
+                                    className="px-2 py-0.5 text-xs font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-full hover:bg-gray-300 dark:hover:bg-gray-500"
+                                >
+                                    {typeof genre === 'object' ? genre.name : genre}
+                                </Link>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+
 
         {episodes && episodes.length > 0 && (
           <div className="px-2 sm:px-6 py-6 border-t border-gray-200 dark:border-gray-700">
@@ -251,12 +309,14 @@ const AnimeDetail = () => {
             </div>
           </div>
         )}
-        {(!episodes || episodes.length === 0) && (
+        {(!episodes || episodes.length === 0) && animeData && ( // Ensure animeData is loaded before saying no episodes
             <div className="px-6 py-6 border-t border-gray-200 dark:border-gray-700">
                 <p className="text-gray-600 dark:text-gray-400">Belum ada episode yang tersedia untuk anime ini.</p>
             </div>
         )}
-        {animeId && <BatchDownloadSection animeId={animeId} animeTitle={title} />} 
+        <div className="p-6 sm:p-8 border-t border-gray-200 dark:border-gray-700">
+            {animeId && <BatchDownloadSection batchId={animeId} />}
+        </div>
       </div>
     </div>
   );

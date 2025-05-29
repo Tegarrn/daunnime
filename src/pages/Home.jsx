@@ -1,22 +1,21 @@
 // src/pages/Home.jsx
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom'; // Link dihapus jika tidak dipakai langsung di sini
+import { useState, useEffect, useCallback } from 'react'; // useCallback ditambahkan
+import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, TrendingUp, Clock, Search as SearchIcon, AlertTriangle } from 'lucide-react'; // ChevronRight, Zap, etc. dihapus jika Section tidak dipakai di sini
+import { Sparkles, TrendingUp, Clock, Search as SearchIcon, AlertTriangle } from 'lucide-react';
 import {
-  getHomeData,
-  getRecentAnime, // Ini sekarang alias ke getOngoingAnime
-  getPopularAnime, // Ini sekarang alias ke getCompletedAnime
+  getHomeData,    // Ini adalah alias untuk getAnimeList (endpoint /otakudesu/home)
+  getRecentAnime, // Ini adalah alias untuk getOngoingAnime
+  getPopularAnime,  // Ini adalah alias untuk getCompletedAnime
   searchAnime
 } from '../services/api';
-import AnimeCard from '../components/AnimeCard'; //
-import Loader from '../components/Loader'; //
-import Pagination from '../components/Pagination'; //
-import SearchBar from '../components/SearchBar'; //
-// Helmet dihapus
+import AnimeCard from '../components/AnimeCard';
+import Loader from '../components/Loader';
+import Pagination from '../components/Pagination';
+import SearchBar from '../components/SearchBar';
 
 const Home = () => {
-  const [searchParams, setSearchParams] = useSearchParams(); // setSearchParams ditambahkan untuk navigasi halaman
+  const [searchParams, setSearchParams] = useSearchParams();
   const searchQuery = searchParams.get('q');
   const pageParam = searchParams.get('page');
   const currentPage = pageParam ? parseInt(pageParam) : 1;
@@ -25,123 +24,148 @@ const Home = () => {
   const [error, setError] = useState(null);
   const [animeList, setAnimeList] = useState([]);
   const [totalPages, setTotalPages] = useState(1);
-  const [activeTab, setActiveTab] = useState(searchQuery ? 'search' : 'recent');
+  const [activeTab, setActiveTab] = useState(searchQuery ? 'search' : 'recent'); // Default ke 'recent' jika tidak ada pencarian
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        setAnimeList([]); // Kosongkan list sebelum fetch baru
-        let rawData = {};
-        let flatList = [];
-        let fetchedTotalPages = 1;
+  const fetchData = useCallback(async () => { // Dibungkus dengan useCallback
+    try {
+      setLoading(true);
+      setError(null);
+      setAnimeList([]);
+      let rawData = {}; // Akan berisi data yang sudah di-unwrap oleh service API
+      let flatList = [];
+      let fetchedTotalPages = 1;
+      let currentTitle = "DaunNime - Nonton Anime Sub Indo"; // Judul default
 
-        if (searchQuery) {
-          // Untuk searchAnime, asumsikan 'currentPage' bisa dikirim jika API mendukung
-          rawData = await searchAnime(searchQuery, currentPage);
-          setActiveTab('search');
-          // TODO: VERIFIKASI struktur data searchAnime dari Otakudesu
-          // Asumsi: rawData.data adalah array, atau rawData.data.animeList, atau rawData.data.results
-          flatList = rawData?.data?.animeList || rawData?.data?.results || (Array.isArray(rawData?.data) ? rawData.data : (Array.isArray(rawData) ? rawData : []));
-          fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.data?.pagination?.totalPages || 1;
-        } else if (activeTab === 'recent') {
-          rawData = await getRecentAnime(currentPage); // Ini memanggil getOngoingAnime
-          // TODO: VERIFIKASI struktur data getOngoingAnime dari Otakudesu
-          // Asumsi: rawData.data.ongoing (array) atau rawData.data.animeList (array)
-          flatList = rawData?.data?.ongoing || rawData?.data?.animeList || (Array.isArray(rawData?.data) ? rawData.data : []);
-          fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.data?.pagination?.totalPages || 1;
-        } else if (activeTab === 'popular') {
-          rawData = await getPopularAnime(currentPage); // Ini memanggil getCompletedAnime
-          // TODO: VERIFIKASI struktur data getCompletedAnime dari Otakudesu
-          // Asumsi: rawData.data.completed (array) atau rawData.data.animeList (array)
-          flatList = rawData?.data?.completed || rawData?.data?.animeList || (Array.isArray(rawData?.data) ? rawData.data : []);
-          fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.data?.pagination?.totalPages || 1;
-        } else { // Fallback jika tidak ada tab aktif atau search (mungkin tab default "Home")
-          rawData = await getHomeData(); // Ini memanggil getAnimeList (endpoint /otakudesu/home)
-          // Berdasarkan JSON yang Anda berikan untuk /otakudesu/home:
-          if (rawData && rawData.data && rawData.data.ongoing && Array.isArray(rawData.data.ongoing.animeList)) {
-            flatList = rawData.data.ongoing.animeList;
-          } else {
-            flatList = [];
-            console.warn("Struktur data /otakudesu/home tidak sesuai harapan, atau tidak ada ongoing.animeList.");
-          }
-          // Endpoint /otakudesu/home mungkin tidak memiliki pagination sendiri, jadi totalPages = 1
-          fetchedTotalPages = rawData?.data?.ongoing?.pagination?.totalPages || 1;
+      if (searchQuery) {
+        setActiveTab('search'); // Pastikan tab search aktif
+        rawData = await searchAnime(searchQuery, currentPage);
+        // Asumsi: rawData bisa berupa array atau objek { results: [...], pagination: {...} } atau { animeList: [...] }
+        flatList = Array.isArray(rawData) 
+          ? rawData 
+          : rawData?.results || rawData?.animeList || [];
+        fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.totalPages || 1;
+        currentTitle = `Pencarian: "${searchQuery}" - DaunNime`;
+      } else if (activeTab === 'recent') {
+        rawData = await getRecentAnime(currentPage);
+        // Asumsi: rawData bisa berupa array atau objek { ongoing: [...], pagination: {...} } atau { animeList: [...] }
+        flatList = Array.isArray(rawData) 
+          ? rawData 
+          : rawData?.ongoing || rawData?.animeList || [];
+        fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.totalPages || 1;
+        currentTitle = `Anime Terbaru (Ongoing) - DaunNime`;
+      } else if (activeTab === 'popular') {
+        rawData = await getPopularAnime(currentPage);
+        // Asumsi: rawData bisa berupa array atau objek { completed: [...], pagination: {...} } atau { animeList: [...] }
+        flatList = Array.isArray(rawData) 
+          ? rawData 
+          : rawData?.completed || rawData?.animeList || [];
+        fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.totalPages || 1;
+        currentTitle = `Anime Populer (Completed) - DaunNime`;
+      } else { // Fallback jika tab tidak dikenal, bisa default ke 'recent' atau 'home' data
+        // Untuk saat ini, karena default tab adalah 'recent', cabang ini mungkin jarang tercapai
+        // Jika Anda ingin tab 'Home' khusus yang menggunakan getHomeData:
+        // rawData = await getHomeData(); // /otakudesu/home
+        // // Struktur /otakudesu/home mungkin: { ongoing: { animeList: [], pagination: {} }, completed: { ... } }
+        // // Pilih list yang ingin ditampilkan, misal ongoing:
+        // flatList = rawData?.ongoing?.animeList || [];
+        // fetchedTotalPages = rawData?.ongoing?.pagination?.totalPages || 1;
+        // Jika tidak, default ke 'recent' seperti di atas
+        rawData = await getRecentAnime(currentPage); // Default ke recent jika activeTab aneh
+        flatList = Array.isArray(rawData) ? rawData : rawData?.ongoing || rawData?.animeList || [];
+        fetchedTotalPages = rawData?.pagination?.totalPages || rawData?.totalPages || 1;
+        currentTitle = `Anime Terbaru (Ongoing) - DaunNime`;
+        setActiveTab('recent'); // Set tab ke recent jika fallback
+      }
+      
+      document.title = currentTitle;
+      console.log("Home.jsx - Raw Data received from service:", JSON.stringify(rawData, null, 2));
+      
+      if (!Array.isArray(flatList)) {
+          console.warn("Home.jsx - flatList is not an array after API call, defaulting to empty. Received:", flatList);
+          flatList = [];
+      }
+
+      const normalizedList = flatList.map(item => {
+        if (!item || typeof item !== 'object') {
+          console.warn("Home.jsx - Invalid item in flatList:", item);
+          return null;
         }
         
-        console.log("Raw Data received in Home.jsx:", JSON.stringify(rawData, null, 2));
-        console.log("FlatList extracted:", JSON.stringify(flatList, null, 2));
-
-        if (!Array.isArray(flatList)) {
-            console.error("flatList is not an array!", flatList);
-            flatList = []; // Pastikan flatList adalah array untuk .map
+        let id = item.animeId || item.id || item.slug;
+        if (!id && item.href) {
+          const hrefStr = String(item.href);
+          const match = hrefStr.match(/\/anime\/([^\/]+)\/?$/) || hrefStr.match(/\/([^\/]+)\/?$/); // Coba beberapa pola
+          id = match ? match[1] : hrefStr.substring(hrefStr.lastIndexOf('/') + 1).replace(/\/$/, '');
         }
+        id = id || String(Math.random());
 
-        // Normalisasi anime data
-        const normalizedList = flatList.map(item => {
-          if (!item || typeof item !== 'object') { // Tambah pengecekan tipe item
-            console.warn("Invalid item in flatList:", item);
-            return null;
-          }
-          
-          // Sesuaikan dengan field dari JSON /otakudesu/home
-          return {
-            id: item.animeId || item.id || String(Math.random()), // animeId dari JSON Anda
-            title: item.title || 'No Title',
-            thumbnail: item.poster || '/placeholder-anime.jpg', // poster dari JSON Anda
-            // Untuk episodeNumber di AnimeCard, kita gunakan latestReleaseDate atau jumlah episode
-            episodeNumber: item.latestReleaseDate || (item.episodes ? `Eps: ${item.episodes}`: null), // episodes (jumlah) atau latestReleaseDate
-            type: item.type || 'TV', // type tidak ada di JSON, default ke TV
-            // score tidak ada di JSON Anda
-            // releaseDay dari JSON Anda, bisa ditambahkan jika AnimeCard mendukung
-          };
-        }).filter(Boolean); // Hapus item yang null hasil dari normalisasi gagal
+        let episodeDisplay = item.latestEpisode || item.episode || item.current_episode || item.episode_count;
+        if (episodeDisplay && !String(episodeDisplay).toLowerCase().includes('eps')) {
+            episodeDisplay = `Ep ${episodeDisplay}`;
+        } else if (!episodeDisplay && item.episodes && item.status && String(item.status).toLowerCase().includes('completed')) {
+            episodeDisplay = `${item.episodes} Eps`;
+        } else if (!episodeDisplay && item.episodes) {
+            episodeDisplay = `Ep ${item.episodes}`;
+        } else if (!episodeDisplay && item.latestReleaseDate) {
+            episodeDisplay = item.latestReleaseDate;
+        }
+        
+        return {
+          id: id,
+          title: item.title || item.name || 'Judul Tidak Diketahui',
+          thumbnail: item.poster || item.thumbnail || item.image || item.img || '/placeholder-anime.jpg',
+          episodeNumber: episodeDisplay,
+          type: item.type || item.category || 'TV',
+          rating: item.score || item.rating, // AnimeCard akan menampilkan rating jika ada
+        };
+      }).filter(Boolean);
 
-        console.log("NormalizedList:", JSON.stringify(normalizedList, null, 2));
+      console.log("Home.jsx - NormalizedList:", JSON.stringify(normalizedList, null, 2));
 
-        setAnimeList(normalizedList);
-        setTotalPages(fetchedTotalPages > 0 ? fetchedTotalPages : 1); // Pastikan totalPages minimal 1
-      } catch (err) {
-        console.error('Error fetching data in Home.jsx:', err);
-        setError('Gagal memuat data anime. Silakan coba lagi nanti.');
-        setAnimeList([]); // Pastikan animeList kosong jika ada error
-        setTotalPages(1);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-
-    // Pengaturan judul dokumen
-    if (searchQuery) {
-        document.title = `Pencarian: ${searchQuery} - DaunNime`;
-    } else if (activeTab === 'recent') {
-        document.title = `Anime Terbaru (Ongoing) - DaunNime`;
-    } else if (activeTab === 'popular') {
-        document.title = `Anime Populer (Completed) - DaunNime`;
-    } else {
-        document.title = "DaunNime - Nonton Anime Sub Indo";
+      setAnimeList(normalizedList);
+      setTotalPages(fetchedTotalPages > 0 ? fetchedTotalPages : 1);
+    } catch (err) {
+      console.error('Home.jsx - Error fetching data:', err);
+      setError(`Gagal memuat data anime: ${err.message}. Silakan coba lagi nanti.`);
+      setAnimeList([]);
+      setTotalPages(1);
+      document.title = "Error Memuat Anime - DaunNime";
+    } finally {
+      setLoading(false);
     }
+  }, [searchQuery, currentPage, activeTab, setSearchParams]); // Tambahkan setSearchParams karena dipakai di handleTabChange
 
-  }, [searchQuery, currentPage, activeTab]); // activeTab sebagai dependency
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]); // fetchData sudah di-memoize dengan useCallback
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    const newSearchParams = new URLSearchParams(); // Hapus query 'q' saat ganti tab
-    newSearchParams.set('page', '1'); // Selalu ke halaman 1 saat ganti tab
-    setSearchParams(newSearchParams, {replace: true} ); // Gunakan setSearchParams
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const newSearchParams = new URLSearchParams(searchParams); // Pertahankan query pencarian jika ada
+    if(searchQuery && tab !== 'search') { // Hapus query 'q' jika pindah dari tab search ke tab lain
+        newSearchParams.delete('q');
+    }
+    newSearchParams.set('page', '1');
+    setSearchParams(newSearchParams, {replace: true} );
+    // Tidak perlu scroll di sini karena useEffect akan fetch ulang dan render ulang
   };
 
   const handlePageChange = (page) => {
     const newSearchParams = new URLSearchParams(searchParams);
     newSearchParams.set('page', String(page));
-    setSearchParams(newSearchParams, {replace: true}); // Gunakan setSearchParams
+    setSearchParams(newSearchParams, {replace: true});
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleSearchSubmit = (query) => { // Dipanggil oleh SearchBar
+    const newSearchParams = new URLSearchParams();
+    newSearchParams.set('q', query);
+    newSearchParams.set('page', '1'); // Reset ke halaman 1 saat pencarian baru
+    setSearchParams(newSearchParams, { replace: true });
+    setActiveTab('search'); // Otomatis pindah ke tab search
+  };
+
 
   const toggleSearch = () => {
     setIsSearchExpanded(!isSearchExpanded);
@@ -154,25 +178,12 @@ const Home = () => {
       transition: { staggerChildren: 0.05 }
     }
   };
-
-  const categoryVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { 
-      opacity: 1, 
-      y: 0,
-      transition: { 
-        duration: 0.4,
-        ease: "easeOut"
-      }
-    }
-  };
   
   const tabRecentText = "Sedang Tayang";
   const tabPopularText = "Sudah Tamat";
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Hero Section */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-800 dark:to-purple-800">
         <div className="container mx-auto px-4 py-16 md:py-24">
           <motion.div 
@@ -198,15 +209,15 @@ const Home = () => {
               Streaming episode terbaru, jelajahi seri populer, dan temukan anime kesukaanmu.
             </p>
             <div className="max-w-lg mx-auto">
-              <SearchBar heroStyle={true} />
+              {/* SearchBar di sini mungkin perlu prop onSearchSubmit jika ingin memicu handleSearchSubmit */}
+              <SearchBar onSearch={handleSearchSubmit} heroStyle={true} />
             </div>
           </motion.div>
         </div>
       </div>
 
-      {/* Main Content Section */}
       <div className="container mx-auto px-4 py-8 md:py-12">
-        {searchQuery ? (
+        {searchQuery && activeTab === 'search' ? ( // Tampilkan header pencarian hanya jika sedang mencari
           <motion.h1 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -215,25 +226,20 @@ const Home = () => {
             <SearchIcon className="mr-3 text-blue-500" /> Hasil Pencarian untuk: "{searchQuery}"
           </motion.h1>
         ) : (
-          <motion.div 
-            variants={categoryVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <div className="flex items-center mb-6 md:mb-8">
+          <>
+            <div className="flex items-center justify-between mb-6 md:mb-8">
               <h2 className="text-3xl font-bold text-gray-800 dark:text-white">Jelajahi Anime</h2>
-              <div className="ml-auto">
-                <div className="md:hidden">
-                  <button
-                    onClick={toggleSearch}
-                    className="p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  >
-                    <SearchIcon size={20} />
-                  </button>
-                </div>
-                <div className="hidden md:block">
-                  <SearchBar />
-                </div>
+              <div className="md:hidden">
+                <button
+                  onClick={toggleSearch}
+                  className="p-2 rounded-full bg-blue-500 text-white hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  aria-label="Toggle search bar"
+                >
+                  <SearchIcon size={20} />
+                </button>
+              </div>
+              <div className="hidden md:block">
+                <SearchBar onSearch={handleSearchSubmit} />
               </div>
             </div>
 
@@ -245,12 +251,11 @@ const Home = () => {
                   exit={{ height: 0, opacity: 0 }}
                   className="mb-6 md:hidden overflow-hidden"
                 >
-                  <SearchBar />
+                  <SearchBar onSearch={handleSearchSubmit} />
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* Tabs */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg mb-8 overflow-hidden">
               <div className="flex border-b border-gray-200 dark:border-gray-700">
                 <button
@@ -267,7 +272,7 @@ const Home = () => {
                   </div>
                   {activeTab === 'recent' && (
                     <motion.div 
-                      layoutId="activeTabHighlightHome" // Unique layoutId
+                      layoutId="activeTabHighlightHome"
                       className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-1 bg-blue-600 dark:bg-blue-400 rounded-t-sm"
                     />
                   )}
@@ -287,14 +292,14 @@ const Home = () => {
                   </div>
                   {activeTab === 'popular' && (
                     <motion.div 
-                      layoutId="activeTabHighlightHome" // Same layoutId for smooth transition between these two tabs
+                      layoutId="activeTabHighlightHome"
                       className="absolute bottom-0 left-0 right-0 h-0.5 sm:h-1 bg-blue-600 dark:bg-blue-400 rounded-t-sm"
                     />
                   )}
                 </button>
               </div>
             </div>
-          </motion.div>
+          </>
         )}
 
         {loading ? (
@@ -313,7 +318,7 @@ const Home = () => {
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => window.location.reload()}
+              onClick={fetchData} // Menggunakan fetchData yang sudah di-memoize
               className="mt-6 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400"
             >
               Coba Lagi
@@ -332,6 +337,7 @@ const Home = () => {
                 : 'Tidak ada anime untuk ditampilkan saat ini.'}
             </p>
              {searchQuery && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Coba kata kunci lain.</p>}
+             {!searchQuery && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Silakan coba lagi nanti atau periksa tab lain.</p>}
           </motion.div>
         ) : (
           <>
@@ -343,7 +349,7 @@ const Home = () => {
             >
               {animeList.map((anime, index) => (
                 <motion.div
-                  key={anime.id} // Menggunakan anime.id yang sudah dinormalisasi
+                  key={anime.id || index} // Gunakan index sebagai fallback key jika id masih bisa duplikat/null
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ 
                     opacity: 1, 
@@ -355,7 +361,6 @@ const Home = () => {
                   }}
                   whileHover={{ y: -5, transition: { duration: 0.15 } }}
                 >
-                  {/* Pastikan prop yang di-pass ke AnimeCard sesuai dengan yang diharapkan oleh AnimeCard.jsx */}
                   <AnimeCard anime={anime} />
                 </motion.div>
               ))}

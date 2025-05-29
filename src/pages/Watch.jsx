@@ -4,8 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getEpisodeDetails, getStreamingServerLink, getAnimeDetails } from '../services/api';
 import Loader from '../components/Loader';
 import VideoPlayer from '../components/VideoPlayer';
-import { AlertTriangle, ChevronLeft, ChevronRight, List, Download, PlayCircle } from 'lucide-react'; // ExternalLink dihapus jika tidak dipakai, PlayCircle ditambahkan
-// import {Helmet} from "react-helmet-async"; // Dihapus
+import { AlertTriangle, ChevronLeft, ChevronRight, List, Download, PlayCircle } from 'lucide-react';
 
 const Watch = () => {
   const { episodeId } = useParams();
@@ -27,17 +26,16 @@ const Watch = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await getEpisodeDetails(episodeId);
-      let epData = response.data || response;
+      // getEpisodeDetails now returns core data object
+      const epData = await getEpisodeDetails(episodeId);
       setEpisodeData(epData);
 
       const parentAnimeId = epData?.anime?.id || epData?.anime_id || epData?.animeId;
       if (parentAnimeId) {
         try {
-            const animeRes = await getAnimeDetails(parentAnimeId);
-            const animeParentData = animeRes.data || animeRes;
+            // getAnimeDetails now returns core data object
+            const animeParentData = await getAnimeDetails(parentAnimeId);
             setAnimeDetails(animeParentData);
-            // Mengatur judul dokumen setelah animeDetails dan episodeData ada
             if (epData && epData.title && animeParentData && animeParentData.title) {
                 document.title = `Nonton ${epData.title} - ${animeParentData.title} - DaunNime`;
             } else if (epData && epData.title) {
@@ -47,11 +45,11 @@ const Watch = () => {
             }
         } catch (animeErr) {
             console.warn("Could not fetch parent anime details for episode list:", animeErr);
-            if (epData && epData.title) { // Fallback title jika detail anime gagal
+            if (epData && epData.title) {
                 document.title = `Nonton ${epData.title} - DaunNime`;
             }
         }
-      } else if (epData && epData.title) { // Fallback title jika tidak ada parentAnimeId
+      } else if (epData && epData.title) {
         document.title = `Nonton ${epData.title} - DaunNime`;
       }
 
@@ -73,24 +71,25 @@ const Watch = () => {
     } finally {
       setLoading(false);
     }
-  }, [episodeId]); // handleServerChange dihapus dari dependency array untuk menghindari loop jika dia memodifikasi state yang memicu useEffect ini
+  }, [episodeId]); 
 
-  // useEffect untuk handleServerChange, dipisah agar tidak menyebabkan re-fetch data utama
-   const handleServerChange = useCallback(async (server) => { // useCallback ditambahkan
+   const handleServerChange = useCallback(async (server) => { 
     if (!server) return;
     setCurrentServer(server);
     setLoadingServer(true);
     setVideoUrl(''); 
-    setError(null); // Reset error server sebelumnya
+    setError(null); 
 
     try {
-      let serverIdentifier = server.id || server.stream_id || server.value; // stream_id atau value mungkin digunakan oleh beberapa API
+      let serverIdentifier = server.id || server.stream_id || server.value; 
       
-      if (server.url && (server.type === 'embed' || !serverIdentifier) ) { // Jika server.url adalah link embed atau tidak ada identifier untuk API
+      if (server.url && (server.type === 'embed' || !serverIdentifier) ) { 
         setVideoUrl(server.url);
       } else if (serverIdentifier) {
          const streamResponse = await getStreamingServerLink(serverIdentifier);
-        const actualUrl = streamResponse?.data?.url || streamResponse?.url || (streamResponse?.data?.link) || (streamResponse?.link);
+         // getStreamingServerLink might return { url: ... } or { data: { url: ... } }
+         // The service/api.js now tries to return the inner data if response.data.url exists.
+        const actualUrl = streamResponse?.url || streamResponse?.link; // Adjusted to check root first after api.js change
         if (!actualUrl) throw new Error ("URL streaming tidak ditemukan dari server.");
         setVideoUrl(actualUrl);
       } else {
@@ -103,7 +102,7 @@ const Watch = () => {
     } finally {
         setLoadingServer(false);
     }
-  }, []); // Dependency kosong karena ini utility function yang dipanggil manual
+  }, []); 
 
   useEffect(() => {
     fetchEpisodeAndAnimeData();
@@ -113,7 +112,7 @@ const Watch = () => {
   const episodeTitleForDisplay = episodeData?.title || `Episode ${episodeId.split('-').pop()}`;
 
 
-  if (loading && !episodeData) { // Hanya loading utama jika episodeData belum ada
+  if (loading && !episodeData) { 
     return <div className="flex justify-center items-center min-h-[calc(100vh-200px)]"><Loader /></div>;
   }
 
@@ -133,12 +132,11 @@ const Watch = () => {
     );
   }
   
-  const serverFetchError = error && episodeData; // Error spesifik server
+  const serverFetchError = error && episodeData; 
 
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-8">
-        {/* <Helmet> Dihapus </Helmet> */}
       <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg overflow-hidden">
         <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-1">
@@ -157,8 +155,6 @@ const Watch = () => {
             <VideoPlayer 
                 src={videoUrl} 
                 poster={animeDetails?.poster || episodeData?.thumbnail} 
-                // serverId tidak lagi relevan jika VideoPlayer hanya menerima src
-                // serverOptions bisa dihilangkan dari VideoPlayer jika pemilihan server dilakukan di Watch.jsx
             />
           }
           {!loadingServer && !videoUrl && !serverFetchError && (
@@ -174,7 +170,7 @@ const Watch = () => {
              <div className="w-full h-full flex flex-col justify-center items-center text-red-400 p-4">
                 <AlertTriangle size={64} className="mb-4 opacity-80" />
                 <p className="font-semibold">Gagal memuat video dari server ini.</p>
-                <p className="text-sm">{error}</p> {/* Menampilkan pesan error server */}
+                <p className="text-sm">{error}</p> 
                 <p className="text-sm mt-2">Silakan coba server lain.</p>
             </div>
           )}
@@ -187,11 +183,11 @@ const Watch = () => {
                 <div className="flex flex-wrap gap-2">
                 {episodeData.servers.map((server, index) => (
                     <button
-                    key={server.id || server.name || index} // Pastikan key unik
-                    onClick={() => handleServerChange(server)} // Kirim objek server utuh
+                    key={server.id || server.name || index} 
+                    onClick={() => handleServerChange(server)} 
                     disabled={loadingServer}
                     className={`px-4 py-2 text-sm font-medium rounded-md transition-colors
-                                ${currentServer && (currentServer.id === server.id || currentServer.name === server.name) // Penyesuaian perbandingan
+                                ${currentServer && (currentServer.id === server.id || currentServer.name === server.name) 
                                 ? 'bg-blue-600 text-white shadow-lg'
                                 : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600'}
                                 ${loadingServer ? 'opacity-50 cursor-not-allowed' : ''}`}
